@@ -19,18 +19,32 @@ pure-Go TeX effort; the full engine will live in `go-tex/tex`.
 Typesets, using real OpenType MATH metrics (axis height, script shifts,
 fraction rule thickness, script scale-down, …):
 
-- **variables** as Unicode math-italic, digits and operators upright;
-- **superscripts** (`^`) and **subscripts** (`_`), including both on one nucleus;
-- **fractions** (`\frac{num}{den}`) with the rule on the math axis;
-- **grouping** (`{…}`) and nesting (fractions inside scripts inside fractions);
-- a **named-symbol table** (`\alpha`, `\sum`, `\int`, `\leq`, `\rightarrow`, …).
+- **variables** as Unicode math-italic; **atom-class spacing** (TeX Appendix G:
+  thin/medium/thick around operators, relations, punctuation);
+- **superscripts** (`^`), **subscripts** (`_`), and **primes** (`'`), with
+  big-operator **limits** set above/below in display style;
+- **fractions** (`\frac`, `\dfrac`, `\tfrac`) with the rule on the math axis;
+- **radicals** — `\sqrt{…}` and `\sqrt[n]{…}` with a stretchy radical sign;
+- **stretchy delimiters** — `\left( … \right)`, `[ ]`, `\{ \}`, `\langle`,
+  `\lfloor`, `|`, and null `.`, grown to the content via MATH size variants;
+- **matrices** — `matrix`, `pmatrix`, `bmatrix`, `Bmatrix`, `vmatrix`,
+  `Vmatrix`, and `cases`;
+- **accents** — `\hat \bar \vec \tilde \dot \ddot \check \breve \acute \grave`
+  — plus `\overline`/`\underline`;
+- **math alphabets** — `\mathbb \mathcal \mathfrak \mathbf \mathsf \mathtt
+  \mathit \mathrm` (via Unicode math alphanumerics, hole-corrected) and `\text`;
+- **~200 named symbols** — Greek, big operators, binary operators, relations,
+  arrows, set/logic; **spacing** (`\, \: \; \! \quad \qquad`); and explicit
+  **`\displaystyle`/`\textstyle`**.
 
 ```
-x^2 + 1        E = mc^2        \frac{x^2+1}{\alpha-\beta}        \sum_{i=1}^{n} i^2
+\sum_{i=1}^{n} i^2      \sqrt[3]{\frac{a}{b}}      \left(\frac{x+1}{2}\right)^n
+\begin{pmatrix} a & b \\ c & d \end{pmatrix}      \mathbb{R} \subset \mathbb{C}
 ```
 
 Each renders to a crisp, resolution-independent SVG of positioned glyph paths
-(and a `<rect>` rule for fractions).
+(with `<rect>` rules for fractions, radicals and bars). Use `RenderDisplaySVG`
+for display style (larger operators, limits above/below).
 
 ## Install
 
@@ -80,13 +94,20 @@ Measured (STIX Two Math embedded): ~1.6 MB gzip worker (most of it the font,
 which is subsettable), ~0.1–0.3 ms per formula — fast enough to re-render on
 every keystroke.
 
-## Scope
+## Scope — what this is, and is *not*
 
-This is the math-mode core. Not yet implemented (planned): radicals (`\sqrt` as a
-built extensible radical rather than a symbol), big operators with display-style
-limits, extensible delimiters via the MATH variant/assembly tables, and the full
-TeX inter-atom spacing table. The named-symbol set is intentionally small and
-easy to extend.
+This is a **math-mode typesetter for preview**, not a TeX engine and **not a
+replacement for a TeX distribution (TeXLive)**. It renders TeX *math* to SVG; it
+does not process LaTeX *documents* — there is no macro expander, no page/line
+breaking, no packages, no fonts-beyond-the-one-you-pass, and no PDF/DVI output.
+Full LaTeX is the separate, staged [`go-tex/tex`](https://github.com/go-tex)
+engine effort.
+
+Within math mode it is broad (see the feature list above). Known limitations:
+stretchy glyphs use MATH *size variants* only (not yet the *assembly* recipe, so
+delimiters taller than the largest variant stop growing); accent positioning is
+approximate; and there is no `\substack`, alignment (`aligned`/`&`-columns
+beyond matrices), or user-defined macros. The symbol table is easy to extend.
 
 ## Tests
 

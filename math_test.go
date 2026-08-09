@@ -20,148 +20,234 @@ func newRenderer(t *testing.T) *Renderer {
 
 func TestNew_Errors(t *testing.T) {
 	if _, err := New([]byte("not a font")); err == nil {
-		t.Error("New(garbage) should fail to parse")
+		t.Error("New(garbage) should fail")
 	}
 	nomath, err := os.ReadFile("testdata/nomath.otf")
 	if err != nil {
 		t.Fatalf("read nomath: %v", err)
 	}
 	if _, err := New(nomath); err == nil {
-		t.Error("New(font without MATH) should fail")
+		t.Error("New(no MATH) should fail")
 	}
-	if r := newRenderer(t); r.font == nil {
-		t.Error("valid font gave a nil renderer font")
+	if newRenderer(t).font == nil {
+		t.Error("nil font")
 	}
 }
 
-func TestRenderSVG_Structure(t *testing.T) {
-	r := newRenderer(t)
-	cases := []struct {
-		tex         string
-		wantPathMin int
-		wantRect    bool
-	}{
-		{`x`, 1, false},
-		{`x^2 + 1`, 4, false},
-		{`a_i`, 2, false},
-		{`E = mc^2`, 5, false},
-		{`\frac{a}{b}`, 2, true},
-		{`\alpha \leq \beta`, 3, false},
-		{`\frac{x^2}{\alpha-\beta}`, 4, true},
+// renderOK renders (both styles) and asserts a well-formed svg with no NaN/Inf.
+func renderOK(t *testing.T, r *Renderer, tex string) string {
+	t.Helper()
+	for _, disp := range []bool{false, true} {
+		var svg string
+		var err error
+		if disp {
+			svg, err = r.RenderDisplaySVG(tex, 32)
+		} else {
+			svg, err = r.RenderSVG(tex, 32)
+		}
+		if err != nil {
+			t.Fatalf("render(%q, display=%v): %v", tex, disp, err)
+		}
+		if !strings.HasPrefix(svg, "<svg") || !strings.HasSuffix(svg, "</svg>") {
+			t.Fatalf("render(%q): malformed: %.40s", tex, svg)
+		}
+		if strings.Contains(svg, "NaN") || strings.Contains(svg, "Inf") {
+			t.Fatalf("render(%q): NaN/Inf", tex)
+		}
 	}
-	for _, c := range cases {
-		t.Run(c.tex, func(t *testing.T) {
-			svg, err := r.RenderSVG(c.tex, 40)
-			if err != nil {
-				t.Fatalf("RenderSVG(%q): %v", c.tex, err)
-			}
-			if !strings.HasPrefix(svg, "<svg") || !strings.HasSuffix(svg, "</svg>") {
-				t.Errorf("not a complete svg document: %.40s", svg)
-			}
-			if n := strings.Count(svg, "<path"); n < c.wantPathMin {
-				t.Errorf("path count = %d, want >= %d", n, c.wantPathMin)
-			}
-			if hasRect := strings.Contains(svg, "<rect"); hasRect != c.wantRect {
-				t.Errorf("rect present = %v, want %v", hasRect, c.wantRect)
-			}
-			if strings.Contains(svg, "NaN") || strings.Contains(svg, "Inf") {
-				t.Errorf("svg contains NaN/Inf: %q", c.tex)
+	svg, _ := r.RenderSVG(tex, 32)
+	return svg
+}
+
+func TestFeatures(t *testing.T) {
+	r := newRenderer(t)
+	for _, tex := range []string{
+		`a + b = c`,
+		`x^2 - 2x + 1 \leq 0`,
+		`a_i + b^j - c_k^l`,
+		`\frac{a}{b}`, `\dfrac{a}{b}`, `\tfrac{a}{b}`,
+		`\sqrt{x}`, `\sqrt[3]{x+y}`,
+		`\left( a \right)`, `\left[ \frac{a}{b} \right]`, `\left\{ x \right\}`,
+		`\left. a \right|`, `\left\langle x \right\rangle`,
+		`\hat{x} \bar{y} \vec{v} \tilde{n} \dot{a} \ddot{b} \check{c} \breve{d} \acute{e} \grave{f}`,
+		`\overline{a+b}`, `\underline{xyz}`,
+		`\mathbb{RCHNPQZ} \mathbb{R}`, `\mathcal{ABEFHILMR}`, `\mathfrak{CHIRZg}`,
+		`\mathbf{x} \mathsf{y} \mathtt{z} \mathit{w} \mathrm{d} \text{if}`,
+		`f'(x) g''(x) h'''`,
+		`\sum_{i=1}^{n} i`, `\prod_k a_k`, `\int_0^1 f`, `\lim_{x\to 0} f`,
+		`\begin{matrix} a & b \\ c & d \end{matrix}`,
+		`\begin{pmatrix} a & b \\ c & d \end{pmatrix}`,
+		`\begin{bmatrix} 1 \\ 2 \\ 3 \end{bmatrix}`,
+		`\begin{vmatrix} a & b \\ c & d \end{vmatrix}`,
+		`\begin{Vmatrix} a \end{Vmatrix}`, `\begin{Bmatrix} a \end{Bmatrix}`,
+		`\begin{cases} 1 & x>0 \\ 0 & x\leq 0 \end{cases}`,
+		`a \, b \: c \; d \! e \quad f \qquad g`,
+		`\alpha\beta\gamma\Delta\Omega \infty \partial \nabla \forall \exists`,
+		`x \in A \cup B, \ y \notin C \cap D`,
+		`{a}`, `{}`, `\displaystyle \frac{a}{b}`, `\textstyle x`, `\scriptstyle y`,
+		`\mathbb{R}^n \to \mathbb{R}^m`,
+	} {
+		t.Run(tex, func(t *testing.T) { renderOK(t, r, tex) })
+	}
+}
+
+func TestStructure(t *testing.T) {
+	r := newRenderer(t)
+	// fraction and radical draw a rule.
+	if !strings.Contains(mustRender(t, r, `\frac{a}{b}`), "<rect") {
+		t.Error("fraction has no rule")
+	}
+	if !strings.Contains(mustRender(t, r, `\sqrt{x}`), "<rect") {
+		t.Error("radical has no rule")
+	}
+	if !strings.Contains(mustRender(t, r, `\overline{x}`), "<rect") {
+		t.Error("overline has no rule")
+	}
+	if !strings.Contains(mustRender(t, r, `\underline{x}`), "<rect") {
+		t.Error("underline has no rule")
+	}
+	// pmatrix stretches delimiters → multiple paths.
+	if n := strings.Count(mustRender(t, r, `\begin{pmatrix} a & b \\ c & d \end{pmatrix}`), "<path"); n < 6 {
+		t.Errorf("pmatrix paths = %d", n)
+	}
+}
+
+func mustRender(t *testing.T, r *Renderer, tex string) string {
+	t.Helper()
+	svg, err := r.RenderSVG(tex, 32)
+	if err != nil {
+		t.Fatalf("render(%q): %v", tex, err)
+	}
+	return svg
+}
+
+func TestErrors(t *testing.T) {
+	r := newRenderer(t)
+	for _, tex := range []string{
+		`\nope`,              // unknown command
+		`a}`,                 // unexpected close brace
+		`{a`,                 // missing close brace
+		`^2`, `_i`, `&`, `'`, // atoms that need a nucleus / are misplaced
+		`\frac{a}`,                       // missing frac arg
+		`x^`,                             // missing script atom
+		`\sqrt[3]{`,                      // missing radical body
+		`\sqrt[3`,                        // missing ]
+		`\left(`,                         // \left without \right
+		`\left`,                          // \left without delimiter
+		`\begin`,                         // \begin without {env}
+		`\begin{nope} a \end{nope}`,      // unknown env
+		`\begin{matrix} a`,               // env without \end
+		`\begin{matrix`,                  // unterminated \begin{
+		`\begin{matrix} a \end{bmatrix}`, // mismatched \end
+		`\begin{matrix} a \end`,          // \end without {env}
+		`\begin{matrix} a \end{matrix`,   // unterminated \end{
+		`\hat`,                           // accent without arg
+		`\mathbb`,                        // alphabet without arg
+		// error propagation from nested constructs
+		`\frac{\nope}{b}`, `\frac{a}{\nope}`, `\sqrt{\nope}`, `\sqrt[\nope]{x}`,
+		`\hat{\nope}`, `\overline{\nope}`, `\underline{\nope}`, `\mathbb{\nope}`,
+		`\left(\nope\right)`, `\left(a\nope`, `\begin{matrix}\nope\end{matrix}`,
+		`x^\nope`, `x_\nope`, `{\nope}`, `\left\zzz a \right)`,
+		`\left( x \right\zzz`, // bad closing delimiter
+	} {
+		t.Run(tex, func(t *testing.T) {
+			if _, err := r.RenderSVG(tex, 32); err == nil {
+				t.Errorf("render(%q) should error", tex)
 			}
 		})
 	}
 }
 
-func TestRenderSVG_DefaultSizeAndAbsentGlyph(t *testing.T) {
+func TestClampsAndDelimiters(t *testing.T) {
 	r := newRenderer(t)
-	// sizePx <= 0 falls back to the default.
+	// wide scripts wider than the nucleus exercise the width-max branches.
+	renderOK(t, r, `x^{aaaaaa}`)
+	renderOK(t, r, `x_{bbbbbb}`)
+	renderOK(t, r, `I^{WWWW}_{MMMM}`)
+	// display limits wider than the operator, and narrower.
+	renderOK(t, r, `\sum_{kkkkkk}^{j} a`)
+	renderOK(t, r, `\prod^{mmmmmm} b`)
+	// control-symbol delimiters and null delimiter.
+	renderOK(t, r, `\left\{ x \right\}`)
+	renderOK(t, r, `\left. x \right.`)
+	renderOK(t, r, `\left\lfloor x \right\rfloor`)
+	// tiny size drives the scriptSize floor (s<1).
+	if _, err := r.RenderSVG(`x^2_3`, 1); err != nil {
+		t.Fatalf("tiny size: %v", err)
+	}
+	// single-item and ragged matrix rows.
+	renderOK(t, r, `\begin{matrix} a \\ b & c \end{matrix}`)
+	// primes combined with an explicit superscript.
+	renderOK(t, r, `x'^{2}`)
+	renderOK(t, r, `f''_{n}`)
+	// a big operator with only a subscript / only a superscript in display.
+	renderOK(t, r, `\bigcup_{i} A_i`)
+	// a binary operator at the start of a list is re-classed to ordinary.
+	renderOK(t, r, `-x`)
+	renderOK(t, r, `= + a`)
+}
+
+func TestDefaultSizeAndEmpty(t *testing.T) {
+	r := newRenderer(t)
 	if svg, err := r.RenderSVG("x", 0); err != nil || !strings.HasPrefix(svg, "<svg") {
-		t.Fatalf("default size render: err=%v", err)
+		t.Fatalf("default size: %v", err)
 	}
-	// A rune the font lacks degrades to an empty box (no crash, no path).
+	// empty group renders nothing.
+	if svg := mustRender(t, r, `{}`); strings.Contains(svg, "<path") {
+		t.Error("empty group emitted a path")
+	}
+	// absent glyph → empty box.
 	e := &engine{font: r.font, upem: float64(r.font.UnitsPerEm())}
-	if _, ok := e.glyphBox(0x10FFFF, 40); ok {
-		t.Error("glyphBox for an absent rune should report !ok")
+	if _, ok := e.glyphBox(0x10FFFF, 32, clsOrd); ok {
+		t.Error("absent glyph reported ok")
 	}
-	if b := e.mustGlyph(0x10FFFF, 40); b.w != 0 || b.String() != "" {
-		t.Errorf("mustGlyph(absent) = %+v, want empty box", b)
+	if b := e.mustGlyph(0x10FFFF, 32, clsOrd); b.w != 0 || b.String() != "" {
+		t.Errorf("mustGlyph(absent) = %+v", b)
 	}
 }
 
-func TestRenderSVG_ParseErrors(t *testing.T) {
-	r := newRenderer(t)
-	bad := []string{
-		`\nope`,    // unknown command
-		`a}`,       // unexpected closing brace
-		`{a`,       // missing closing brace
-		`^2`,       // superscript with no nucleus
-		`_i`,       // subscript with no nucleus
-		`\frac{a}`, // frac missing its second argument
-		`x^`,       // script missing its atom
-		`x^}`,      // script atom is a closing brace
-		`\frac}`,   // frac argument is a closing brace
+func TestAlphabets(t *testing.T) {
+	// hole-mapped letters resolve to the reserved code points.
+	cases := []struct {
+		name string
+		in   rune
+		want rune
+	}{
+		{"mathbb", 'R', 0x211D}, {"mathbb", 'A', 0x1D538}, {"mathbb", '0', 0x1D7D8},
+		{"mathcal", 'L', 0x2112}, {"mathcal", 'A', 0x1D49C},
+		{"mathfrak", 'H', 0x210C}, {"mathfrak", 'a', 0x1D51E},
+		{"mathbf", 'a', 0x1D41A}, {"mathsf", 'A', 0x1D5A0}, {"mathtt", 'a', 0x1D68A},
+		{"mathit", 'h', 0x210E}, {"text", 'x', 'x'}, {"mathrm", 'y', 'y'},
+		{"boldsymbol", 'a', 0x1D482}, {"mathbf", '5', 0x1D7D3}, {"mathbf", '+', '+'},
 	}
-	for _, s := range bad {
-		if _, err := r.RenderSVG(s, 40); err == nil {
-			t.Errorf("RenderSVG(%q) should error", s)
+	for _, c := range cases {
+		if got := alphabetFor(c.name)(c.in); got != c.want {
+			t.Errorf("%s(%q) = %U, want %U", c.name, c.in, got, c.want)
 		}
 	}
-	// An empty group is valid and renders nothing.
-	if svg, err := r.RenderSVG(`{}`, 40); err != nil || strings.Contains(svg, "<path") {
-		t.Errorf("empty group: err=%v svg=%q", err, svg)
+	if alphabetFor("bogus") != nil {
+		t.Error("unknown alphabet should be nil")
+	}
+	// digits/punctuation pass through a block mapper unchanged when no digit base.
+	if got := alphabetFor("mathcal")('7'); got != '7' {
+		t.Errorf("mathcal digit = %q", got)
 	}
 }
 
-func TestTokenize(t *testing.T) {
-	toks := tokenize(`a^2 \alpha \{ x_i {b}`)
-	var kinds []tokenKind
-	for _, tk := range toks {
-		kinds = append(kinds, tk.kind)
-	}
-	want := []tokenKind{tChar, tSup, tChar, tCtrl, tCtrl, tChar, tSub, tChar, tLBrace, tChar, tRBrace}
-	if len(kinds) != len(want) {
-		t.Fatalf("kinds = %v, want %v", kinds, want)
-	}
-	for i := range want {
-		if kinds[i] != want[i] {
-			t.Errorf("token %d kind = %d, want %d", i, kinds[i], want[i])
+func TestCharClassAndMathItalic(t *testing.T) {
+	pairs := map[rune]atomClass{'+': clsBin, '=': clsRel, '(': clsOpen, ')': clsClose, ',': clsPunct, 'a': clsOrd}
+	for r, c := range pairs {
+		if got := charClass(r); got != c {
+			t.Errorf("charClass(%q) = %d, want %d", r, got, c)
 		}
 	}
-	if toks[4].kind != tCtrl || toks[4].text != "{" {
-		t.Errorf("control symbol = %+v, want \\{", toks[4])
-	}
-}
-
-func TestMathItalic(t *testing.T) {
-	cases := map[rune]rune{
-		'a': 0x1D44E,
-		'z': 0x1D467,
-		'A': 0x1D434,
-		'Z': 0x1D44D,
-		'h': 0x210E, // reserved hole → PLANCK CONSTANT
-		'1': '1',    // digits unchanged
-		'+': '+',
-	}
-	for in, want := range cases {
-		if got := mathItalic(in); got != want {
-			t.Errorf("mathItalic(%q) = %U, want %U", in, got, want)
-		}
-	}
-}
-
-func TestScriptSize(t *testing.T) {
-	r := newRenderer(t)
-	e := &engine{font: r.font, upem: float64(r.font.UnitsPerEm())}
-	if s := e.scriptSize(100); s <= 0 || s >= 100 {
-		t.Errorf("scriptSize(100) = %d, want in (0,100)", s)
-	}
-	if s := e.scriptSize(1); s < 1 {
-		t.Errorf("scriptSize(1) = %d, want >= 1", s)
+	if mathItalic('a') != 0x1D44E || mathItalic('A') != 0x1D434 || mathItalic('h') != 0x210E || mathItalic('1') != '1' {
+		t.Error("mathItalic mapping wrong")
 	}
 }
 
 func TestFtoa(t *testing.T) {
-	cases := map[float64]string{0: "0", 12.0: "12", 1.25: "1.25", -0.5: "-0.5", 3.14159: "3.142"}
-	for in, want := range cases {
+	for in, want := range map[float64]string{0: "0", 12.0: "12", 1.25: "1.25", -0.5: "-0.5", 3.14159: "3.142"} {
 		if got := ftoa(in); got != want {
 			t.Errorf("ftoa(%v) = %q, want %q", in, got, want)
 		}

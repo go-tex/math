@@ -1,15 +1,19 @@
 // Copyright (c) the go-tex/math authors.
 // SPDX-License-Identifier: BSD-3-Clause
 
-// Package math is a pure-Go TeX math-mode typesetter: it parses a subset of TeX
-// math syntax and lays it out to a self-contained SVG using the OpenType MATH
-// table (via go-opentype) for metrics and vector glyph outlines — no TeX engine,
-// no server, no cgo. It compiles to GOOS=js/wasm for offline, client-side math
+// Package math is a pure-Go TeX math-mode typesetter: it parses a broad subset
+// of TeX math syntax and lays it out to a self-contained SVG using the OpenType
+// MATH table (via go-opentype) for metrics and vector glyph outlines — no TeX
+// engine, no server, no cgo. It compiles to GOOS=js/wasm for offline math
 // preview.
 //
-// Supported subset (prototype): letters (rendered as math italic), digits,
-// operators and a named-symbol table (\alpha, \sum, \int, \leq, …), superscripts
-// (^), subscripts (_), grouping ({…}) and fractions (\frac{num}{den}).
+// Supported: math-italic variables and a large named-symbol table with proper
+// atom-class spacing (Appendix G); superscripts/subscripts and big-operator
+// limits; fractions; radicals (\sqrt, \sqrt[n]); stretchy delimiters
+// (\left…\right); accents (\hat, \vec, \bar, …); \overline/\underline; math
+// alphabets (\mathbb, \mathcal, \mathfrak, \mathrm, \mathbf, \mathsf, \mathtt,
+// \mathit); \text; matrices (matrix/pmatrix/bmatrix/vmatrix/Vmatrix/cases);
+// primes; spacing commands; and \displaystyle/\textstyle.
 package math
 
 import (
@@ -21,12 +25,9 @@ import (
 )
 
 // Renderer typesets TeX math with a single MATH-table font.
-type Renderer struct {
-	font *opentype.Font
-}
+type Renderer struct{ font *opentype.Font }
 
-// New builds a Renderer from an OpenType font that must carry a MATH table
-// (e.g. STIX Two Math, Latin Modern Math).
+// New builds a Renderer from an OpenType font carrying a MATH table.
 func New(fontBytes []byte) (*Renderer, error) {
 	f, err := opentype.Parse(fontBytes)
 	if err != nil {
@@ -38,37 +39,87 @@ func New(fontBytes []byte) (*Renderer, error) {
 	return &Renderer{font: f}, nil
 }
 
-// RenderSVG typesets tex at the given base pixel size and returns a complete,
-// self-contained <svg> document.
+// RenderSVG typesets tex at the given base pixel size (inline/text style) and
+// returns a complete, self-contained <svg> document.
 func (r *Renderer) RenderSVG(tex string, sizePx int) (string, error) {
+	return r.render(tex, sizePx, false)
+}
+
+// RenderDisplaySVG is like RenderSVG but in display style (larger operators,
+// limits set above/below).
+func (r *Renderer) RenderDisplaySVG(tex string, sizePx int) (string, error) {
+	return r.render(tex, sizePx, true)
+}
+
+func (r *Renderer) render(tex string, sizePx int, display bool) (string, error) {
 	if sizePx <= 0 {
 		sizePx = 40
 	}
 	e := &engine{font: r.font, upem: float64(r.font.UnitsPerEm())}
-	toks := tokenize(tex)
-	b, _, err := e.parseRun(toks, sizePx, false)
+	b, _, err := e.parseList(tokenize(tex), style{px: sizePx, display: display, spacious: true}, stopEnd)
 	if err != nil {
 		return "", err
 	}
 	return e.document(b), nil
 }
 
-// ── boxes ───────────────────────────────────────────────────────────────────
+// ── style ───────────────────────────────────────────────────────────────────
 
-// box is a laid-out fragment in SVG coordinates (Y down), with its reference
-// baseline at y=0 and left edge at x=0. h is the extent above the baseline, d
-// the depth below it, w the advance width — all in pixels.
+// style carries the current typesetting context down the layout.
+type style struct {
+	px       int             // pixel size at this level
+	display  bool            // display style (limits above/below, larger stacks)
+	spacious bool            // apply inter-atom spacing (off inside scripts)
+	alpha    func(rune) rune // active letter alphabet (nil = math italic)
+}
+
+// script returns the style for scripts of the current level.
+func (s style) script(e *engine) style {
+	return style{px: e.scriptSize(s.px), spacious: false, alpha: s.alpha}
+}
+
+// inner returns the text-style context for fraction parts / matrix cells.
+func (s style) inner() style {
+	return style{px: s.px, spacious: s.spacious, alpha: s.alpha}
+}
+
+// ── atom classes & boxes ────────────────────────────────────────────────────
+
+type atomClass uint8
+
+const (
+	clsOrd atomClass = iota
+	clsOp
+	clsBin
+	clsRel
+	clsOpen
+	clsClose
+	clsPunct
+	clsInner
+)
+
+// box is a laid-out fragment in SVG coordinates (Y down), baseline at y=0, left
+// edge at x=0. h is the extent above the baseline, d the depth below, w the
+// advance width — all in pixels. cls is the atom class for spacing.
 type box struct {
 	svg  strings.Builder
 	w    float64
 	h, d float64
+	cls  atomClass
 }
 
 func (b *box) String() string { return b.svg.String() }
 
+func newBox(cls atomClass) *box { return &box{cls: cls} }
+
 // place appends src into dst translated by (dx, dy).
-func place(dst *box, src *box, dx, dy float64) {
+func place(dst, src *box, dx, dy float64) {
 	fmt.Fprintf(&dst.svg, `<g transform="translate(%s,%s)">%s</g>`, ftoa(dx), ftoa(dy), src.String())
+}
+
+// rule appends a filled rectangle (x,y,w,h) to dst.
+func rule(dst *box, x, y, w, h float64) {
+	fmt.Fprintf(&dst.svg, `<rect x="%s" y="%s" width="%s" height="%s"/>`, ftoa(x), ftoa(y), ftoa(w), ftoa(h))
 }
 
 // ── engine ──────────────────────────────────────────────────────────────────
@@ -78,39 +129,57 @@ type engine struct {
 	upem float64
 }
 
-// mc reads a MATH constant scaled to sizePx (design units × sizePx/upem).
-func (e *engine) mc(which opentype.MathConstant, sizePx int) float64 {
-	fc := e.font.NewFace(sizePx)
-	return float64(fc.MathConstant(which))
+func (e *engine) face(px int) *opentype.Face { return e.font.NewFace(px) }
+
+// mc reads a MATH constant scaled to px.
+func (e *engine) mc(which opentype.MathConstant, px int) float64 {
+	return float64(e.face(px).MathConstant(which))
 }
 
-// scriptSize returns the pixel size for scripts, scaled by the font's
-// ScriptPercentScaleDown MATH constant (a percentage).
-func (e *engine) scriptSize(sizePx int) int {
-	// Real MATH fonts define ScriptPercentScaleDown; the s<1 floor keeps scripts
-	// visible even at tiny base sizes.
-	pct := e.font.NewFace(sizePx).MathConstant(opentype.ScriptPercentScaleDown)
-	s := sizePx * pct / 100
+func (e *engine) axis(px int) float64 { return e.mc(opentype.AxisHeight, px) }
+
+func (e *engine) scriptSize(px int) int {
+	pct := e.face(px).MathConstant(opentype.ScriptPercentScaleDown)
+	s := px * pct / 100
 	if s < 1 {
 		s = 1
 	}
 	return s
 }
 
-// glyphBox lays out a single rune as a box using its advance and ink extent.
-func (e *engine) glyphBox(r rune, sizePx int) (*box, bool) {
-	fc := e.font.NewFace(sizePx)
+// scale returns px-per-font-unit at size px.
+func (e *engine) scale(px int) float64 { return float64(px) / e.upem }
+
+// glyphBox lays out a single rune as a box of the given class.
+func (e *engine) glyphBox(r rune, px int, cls atomClass) (*box, bool) {
 	gid, ok := e.font.GlyphIndex(r)
 	if !ok {
 		return nil, false
 	}
+	return e.gidBox(gid, px, cls), true
+}
+
+// gidBox builds a box for an already-resolved glyph index.
+func (e *engine) gidBox(gid opentype.GlyphIndex, px int, cls atomClass) *box {
+	fc := e.face(px)
 	d, _ := fc.GlyphSVGPath(gid)
-	segs, _ := fc.GlyphOutline(gid)
-	scale := float64(sizePx) / e.upem
+	h, dp := e.gidVExtent(gid, px)
+	b := &box{w: float64(fc.AdvanceIndex(gid)), h: h, d: dp, cls: cls}
+	if d != "" {
+		fmt.Fprintf(&b.svg, `<path d="%s"/>`, d)
+	}
+	return b
+}
+
+// gidVExtent returns a glyph's ink extent above (h) and below (d) the baseline,
+// in pixels (SVG Y-down).
+func (e *engine) gidVExtent(gid opentype.GlyphIndex, px int) (h, d float64) {
+	segs, _ := e.face(px).GlyphOutline(gid)
+	s := e.scale(px)
 	minY, maxY := 0.0, 0.0
-	for _, s := range segs {
-		for _, p := range s.P {
-			y := -p.Y * scale // font Y-up → SVG Y-down
+	for _, sg := range segs {
+		for _, p := range sg.P {
+			y := -p.Y * s
 			if y < minY {
 				minY = y
 			}
@@ -119,18 +188,56 @@ func (e *engine) glyphBox(r rune, sizePx int) (*box, bool) {
 			}
 		}
 	}
-	b := &box{w: float64(fc.Advance(r)), h: -minY, d: maxY}
-	if d != "" {
-		fmt.Fprintf(&b.svg, `<path d="%s"/>`, d)
-	}
-	return b, true
+	return -minY, maxY
 }
 
-// hbox concatenates boxes left to right on a shared baseline.
-func hbox(items ...*box) *box {
-	out := &box{}
+// interAtom returns the space (px) inserted between two adjacent atom classes,
+// per TeX's Appendix G table (thin=3mu, med=4mu, thick=5mu; mu = em/18).
+func interAtom(l, r atomClass, px int) float64 {
+	const (
+		_ = iota
+		thin
+		med
+		thick
+	)
+	table := [8][8]int{
+		clsOrd:   {clsOp: thin, clsBin: med, clsRel: thick, clsInner: thin},
+		clsOp:    {clsOrd: thin, clsOp: thin, clsRel: thick, clsInner: thin},
+		clsBin:   {clsOrd: med, clsOp: med, clsOpen: med, clsInner: med},
+		clsRel:   {clsOrd: thick, clsOp: thick, clsOpen: thick, clsInner: thick},
+		clsClose: {clsOp: thin, clsBin: med, clsRel: thick, clsInner: thin},
+		clsPunct: {clsOrd: thin, clsOp: thin, clsRel: thin, clsOpen: thin, clsClose: thin, clsPunct: thin, clsInner: thin},
+		clsInner: {clsOrd: thin, clsOp: thin, clsBin: med, clsRel: thick, clsOpen: thin, clsPunct: thin, clsInner: thin},
+	}
+	mu := float64(px) / 18
+	return float64(table[l][r]) * mu
+}
+
+// hlist lays boxes left to right on a shared baseline, inserting inter-atom
+// spacing when sty.spacious, and resolving Bin→Ord where a binary operator
+// cannot stand.
+func (e *engine) hlist(items []*box, sty style) *box {
+	out := newBox(clsOrd)
+	if len(items) == 0 {
+		return out
+	}
+	for i, b := range items {
+		if b.cls != clsBin {
+			continue
+		}
+		prev := clsOpen
+		if i > 0 {
+			prev = items[i-1].cls
+		}
+		if i == 0 || prev == clsBin || prev == clsOp || prev == clsRel || prev == clsOpen || prev == clsPunct {
+			b.cls = clsOrd
+		}
+	}
 	x := 0.0
-	for _, it := range items {
+	for i, it := range items {
+		if i > 0 && sty.spacious {
+			x += interAtom(items[i-1].cls, it.cls, sty.px)
+		}
 		place(out, it, x, 0)
 		x += it.w
 		if it.h > out.h {
@@ -141,17 +248,20 @@ func hbox(items ...*box) *box {
 		}
 	}
 	out.w = x
+	if len(items) == 1 {
+		out.cls = items[0].cls
+	}
 	return out
 }
 
 // attachScripts places a superscript and/or subscript on a nucleus.
-func (e *engine) attachScripts(nuc *box, sup, sub *box, sizePx int) *box {
-	out := &box{}
+func (e *engine) attachScripts(nuc, sup, sub *box, sty style) *box {
+	out := newBox(nuc.cls)
 	place(out, nuc, 0, 0)
 	out.w, out.h, out.d = nuc.w, nuc.h, nuc.d
 	x := nuc.w
 	if sup != nil {
-		shift := e.mc(opentype.SuperscriptShiftUp, sizePx)
+		shift := gomath.Max(e.mc(opentype.SuperscriptShiftUp, sty.px), nuc.h-e.mc(opentype.SuperscriptBaselineDropMax, sty.px)*0)
 		place(out, sup, x, -shift)
 		if t := shift + sup.h; t > out.h {
 			out.h = t
@@ -161,7 +271,7 @@ func (e *engine) attachScripts(nuc *box, sup, sub *box, sizePx int) *box {
 		}
 	}
 	if sub != nil {
-		shift := e.mc(opentype.SubscriptShiftDown, sizePx)
+		shift := gomath.Max(e.mc(opentype.SubscriptShiftDown, sty.px), nuc.d)
 		place(out, sub, x, shift)
 		if b := shift + sub.d; b > out.d {
 			out.d = b
@@ -173,40 +283,262 @@ func (e *engine) attachScripts(nuc *box, sup, sub *box, sizePx int) *box {
 	return out
 }
 
-// fraction stacks num over den with a rule at the math axis.
-func (e *engine) fraction(num, den *box, sizePx int) *box {
-	axis := e.mc(opentype.AxisHeight, sizePx)
-	rule := e.mc(opentype.FractionRuleThickness, sizePx)
-	gapN := e.mc(opentype.FractionNumeratorGapMin, sizePx)
-	gapD := e.mc(opentype.FractionDenominatorGapMin, sizePx)
-	pad := float64(sizePx) * 0.1
-	w := gomath.Max(num.w, den.w) + 2*pad
-
-	out := &box{w: w}
-	// Numerator: its baseline sits so its depth clears the rule + gap above axis.
-	numBaseline := -(axis + rule/2 + gapN + num.d)
-	place(out, num, (w-num.w)/2, numBaseline)
-	// Denominator below the axis.
-	denBaseline := -axis + rule/2 + gapD + den.h
-	place(out, den, (w-den.w)/2, denBaseline)
-	// The rule.
-	fmt.Fprintf(&out.svg, `<rect x="0" y="%s" width="%s" height="%s"/>`,
-		ftoa(-axis-rule/2), ftoa(w), ftoa(rule))
-
-	out.h = -numBaseline + num.h
-	out.d = denBaseline + den.d
+// attachLimits stacks a lower and/or upper limit centred over/under a big
+// operator (display style).
+func (e *engine) attachLimits(op, over, under *box, sty style) *box {
+	w := op.w
+	if over != nil && over.w > w {
+		w = over.w
+	}
+	if under != nil && under.w > w {
+		w = under.w
+	}
+	out := newBox(clsOp)
+	out.w = w
+	place(out, op, (w-op.w)/2, 0)
+	out.h, out.d = op.h, op.d
+	if over != nil {
+		base := op.h + e.mc(opentype.UpperLimitGapMin, sty.px) + over.d
+		place(out, over, (w-over.w)/2, -base)
+		out.h = base + over.h
+	}
+	if under != nil {
+		base := op.d + e.mc(opentype.LowerLimitGapMin, sty.px) + under.h
+		place(out, under, (w-under.w)/2, base)
+		out.d = base + under.d
+	}
 	return out
+}
+
+// fraction stacks num over den with a rule on the math axis.
+func (e *engine) fraction(num, den *box, sty style) *box {
+	px := sty.px
+	axis := e.axis(px)
+	rt := e.mc(opentype.FractionRuleThickness, px)
+	gapN := e.mc(opentype.FractionNumeratorGapMin, px)
+	gapD := e.mc(opentype.FractionDenominatorGapMin, px)
+	if sty.display {
+		gapN = e.mc(opentype.FractionNumDisplayStyleGapMin, px)
+		gapD = e.mc(opentype.FractionDenomDisplayStyleGapMin, px)
+	}
+	pad := float64(px) * 0.12
+	w := gomath.Max(num.w, den.w) + 2*pad
+	out := newBox(clsInner)
+	out.w = w
+	numBase := -(axis + rt/2 + gapN + num.d)
+	place(out, num, (w-num.w)/2, numBase)
+	denBase := -axis + rt/2 + gapD + den.h
+	place(out, den, (w-den.w)/2, denBase)
+	rule(out, 0, -axis-rt/2, w, rt)
+	out.h = -numBase + num.h
+	out.d = denBase + den.d
+	return out
+}
+
+// overline / underline draw a rule above / below the content.
+func (e *engine) overline(b *box, sty style) *box {
+	gap := e.mc(opentype.OverbarVerticalGap, sty.px)
+	rt := e.mc(opentype.OverbarRuleThickness, sty.px)
+	asc := e.mc(opentype.OverbarExtraAscender, sty.px)
+	out := newBox(clsOrd)
+	out.w, out.d = b.w, b.d
+	place(out, b, 0, 0)
+	top := b.h + gap
+	rule(out, 0, -(top + rt), b.w, rt)
+	out.h = top + rt + asc
+	return out
+}
+
+func (e *engine) underline(b *box, sty style) *box {
+	gap := e.mc(opentype.UnderbarVerticalGap, sty.px)
+	rt := e.mc(opentype.UnderbarRuleThickness, sty.px)
+	desc := e.mc(opentype.UnderbarExtraDescender, sty.px)
+	out := newBox(clsOrd)
+	out.w, out.h = b.w, b.h
+	place(out, b, 0, 0)
+	bot := b.d + gap
+	rule(out, 0, bot, b.w, rt)
+	out.d = bot + rt + desc
+	return out
+}
+
+// accent places an accent glyph centred over the nucleus.
+func (e *engine) accent(nuc *box, acc rune, sty style) *box {
+	ab := e.mustGlyph(acc, sty.px, clsOrd)
+	out := newBox(nuc.cls)
+	out.w, out.d = nuc.w, nuc.d
+	place(out, nuc, 0, 0)
+	ax := (nuc.w - ab.w) / 2
+	gap := float64(sty.px) * 0.04
+	ty := -(nuc.h + gap + ab.d) // accent ink bottom sits just above the nucleus
+	place(out, ab, ax, ty)
+	out.h = -ty + ab.h
+	return out
+}
+
+// radical typesets \sqrt{body} (index may be nil) with a stretchy radical sign.
+func (e *engine) radical(body, index *box, sty style) *box {
+	px := sty.px
+	rt := e.mc(opentype.RadicalRuleThickness, px)
+	gap := e.mc(opentype.RadicalVerticalGap, px)
+	if sty.display {
+		gap = e.mc(opentype.RadicalDisplayStyleVerticalGap, px)
+	}
+	asc := e.mc(opentype.RadicalExtraAscender, px)
+	target := body.h + body.d + gap + rt
+	sign := e.stretchVertical('√', target, px, clsOrd)
+	out := newBox(clsOrd)
+	ruleY := -(body.h + gap + rt)
+	x := 0.0
+	if index != nil {
+		place(out, index, x, ruleY+index.d*0)
+		x += index.w * 0.8
+	}
+	// Place the sign so its ink top meets the rule; its tick then reaches down to
+	// (about) the body's depth.
+	ty := ruleY + sign.h
+	place(out, sign, x, ty)
+	x += sign.w
+	place(out, body, x, 0)
+	rule(out, x, ruleY, body.w, rt)
+	out.w = x + body.w
+	out.h = -ruleY + rt + asc
+	out.d = gomath.Max(body.d, ty+sign.d)
+	return out
+}
+
+// stretchVertical returns the natural box (baseline-relative, not re-centred)
+// for rune r grown to at least target height using MATH size variants; the
+// largest variant is the fallback.
+func (e *engine) stretchVertical(r rune, target float64, px int, cls atomClass) *box {
+	gid, _ := e.font.GlyphIndex(r) // 0 (notdef) if absent
+	best := gid
+	variants, _ := e.face(px).MathVariants(gid, true)
+	for _, v := range variants {
+		best = v.Glyph
+		if float64(v.Advance) >= target {
+			break
+		}
+	}
+	return e.gidBox(best, px, cls)
+}
+
+// axisCentre re-positions a box so its vertical midpoint sits on the math axis
+// (used for stretchy delimiters, which straddle the axis).
+func (e *engine) axisCentre(b *box, px int) *box {
+	dy := -e.axis(px) - (b.h-b.d)/2
+	out := newBox(b.cls)
+	out.w = b.w
+	place(out, b, 0, dy)
+	out.h = b.h - dy
+	out.d = b.d + dy
+	if out.d < 0 {
+		out.d = 0
+	}
+	return out
+}
+
+// delimited wraps content in stretchy left/right delimiters (0 rune = none).
+func (e *engine) delimited(inner *box, open, close rune, sty style) *box {
+	target := 2 * gomath.Max(inner.h-e.axis(sty.px), inner.d+e.axis(sty.px))
+	out := newBox(clsInner)
+	x := 0.0
+	grow := func(b *box) {
+		if b.h > out.h {
+			out.h = b.h
+		}
+		if b.d > out.d {
+			out.d = b.d
+		}
+	}
+	if open != 0 {
+		l := e.axisCentre(e.stretchVertical(open, target, sty.px, clsOpen), sty.px)
+		place(out, l, x, 0)
+		x += l.w
+		grow(l)
+	}
+	place(out, inner, x, 0)
+	grow(inner)
+	x += inner.w
+	if close != 0 {
+		rr := e.axisCentre(e.stretchVertical(close, target, sty.px, clsClose), sty.px)
+		place(out, rr, x, 0)
+		x += rr.w
+		grow(rr)
+	}
+	out.w = x
+	return out
+}
+
+// matrix lays rows/cols on a grid centred on the math axis, optionally wrapped
+// in delimiters.
+func (e *engine) matrix(rows [][]*box, open, close rune, sty style) *box {
+	ncol := 0
+	for _, r := range rows {
+		if len(r) > ncol {
+			ncol = len(r)
+		}
+	}
+	colGap := float64(sty.px) * 0.6
+	rowGap := float64(sty.px) * 0.4
+	colW := make([]float64, ncol)
+	rowH := make([]float64, len(rows))
+	rowD := make([]float64, len(rows))
+	for i, r := range rows {
+		for j, c := range r {
+			if c.w > colW[j] {
+				colW[j] = c.w
+			}
+			if c.h > rowH[i] {
+				rowH[i] = c.h
+			}
+			if c.d > rowD[i] {
+				rowD[i] = c.d
+			}
+		}
+	}
+	totalH := 0.0
+	for i := range rows {
+		totalH += rowH[i] + rowD[i]
+		if i > 0 {
+			totalH += rowGap
+		}
+	}
+	grid := newBox(clsInner)
+	axis := e.axis(sty.px)
+	y := -(totalH / 2) - axis
+	for i, r := range rows {
+		y += rowH[i]
+		x := 0.0
+		for j := 0; j < ncol; j++ {
+			if j < len(r) && r[j] != nil {
+				place(grid, r[j], x+(colW[j]-r[j].w)/2, y)
+			}
+			x += colW[j] + colGap
+		}
+		y += rowD[i] + rowGap
+	}
+	gw := colGap * float64(ncol-1)
+	for j := 0; j < ncol; j++ {
+		gw += colW[j]
+	}
+	grid.w = gw
+	grid.h = totalH/2 + axis
+	grid.d = totalH/2 - axis
+	if open == 0 && close == 0 {
+		return grid
+	}
+	return e.delimited(grid, open, close, sty)
 }
 
 // document wraps a laid-out box in a padded, baseline-shifted SVG root.
 func (e *engine) document(b *box) string {
-	pad := 4.0
+	pad := 6.0
 	w := b.w + 2*pad
 	h := b.h + b.d + 2*pad
 	var s strings.Builder
 	fmt.Fprintf(&s, `<svg xmlns="http://www.w3.org/2000/svg" width="%s" height="%s" viewBox="0 0 %s %s">`,
 		ftoa(w), ftoa(h), ftoa(w), ftoa(h))
-	// Fill rule: paths use nonzero; black by default.
 	fmt.Fprintf(&s, `<g fill="currentColor" transform="translate(%s,%s)">%s</g>`,
 		ftoa(pad), ftoa(pad+b.h), b.String())
 	s.WriteString(`</svg>`)
