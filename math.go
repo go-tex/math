@@ -12,8 +12,9 @@
 // limits; fractions; radicals (\sqrt, \sqrt[n]); stretchy delimiters
 // (\left…\right); accents (\hat, \vec, \bar, …); \overline/\underline; math
 // alphabets (\mathbb, \mathcal, \mathfrak, \mathrm, \mathbf, \mathsf, \mathtt,
-// \mathit); \text; matrices (matrix/pmatrix/bmatrix/vmatrix/Vmatrix/cases);
-// primes; spacing commands; and \displaystyle/\textstyle.
+// \mathit); \text; matrices (matrix/pmatrix/bmatrix/vmatrix/Vmatrix/cases),
+// array (with an l/c/r + | column spec), aligned/split, gathered and
+// smallmatrix; primes; spacing commands; and \displaystyle/\textstyle.
 package math
 
 import (
@@ -470,17 +471,46 @@ func (e *engine) delimited(inner *box, open, close rune, sty style) *box {
 	return out
 }
 
-// matrix lays rows/cols on a grid centred on the math axis, optionally wrapped
-// in delimiters.
-func (e *engine) matrix(rows [][]*box, open, close rune, sty style) *box {
+// colAlign selects a matrix/array column's horizontal alignment.
+type colAlign uint8
+
+const (
+	alignC colAlign = iota // centred (matrix default; zero value)
+	alignL                 // flush left
+	alignR                 // flush right
+)
+
+// gridOpts parameterises the generic grid layout.
+type gridOpts struct {
+	aligns []colAlign // per-column alignment; short/nil → remaining cols centred
+	gaps   []float64  // per-column right gap (len ncol-1); nil → uniform colGap
+	colGap float64    // uniform inter-column gap (also the edge margin for vrules)
+	rowGap float64    // inter-row gap
+	vrules []int      // gap indices 0..ncol at which to draw a vertical rule
+}
+
+// gridLayout lays rows/cols on a grid centred on the math axis, with per-column
+// alignment and optional vertical rules between columns. It is the common core
+// for matrix, array, aligned, gathered and smallmatrix.
+func (e *engine) gridLayout(rows [][]*box, o gridOpts, sty style) *box {
 	ncol := 0
 	for _, r := range rows {
 		if len(r) > ncol {
 			ncol = len(r)
 		}
 	}
-	colGap := float64(sty.px) * 0.6
-	rowGap := float64(sty.px) * 0.4
+	align := func(j int) colAlign {
+		if j < len(o.aligns) {
+			return o.aligns[j]
+		}
+		return alignC
+	}
+	gap := func(j int) float64 { // gap to the right of column j
+		if j < len(o.gaps) {
+			return o.gaps[j]
+		}
+		return o.colGap
+	}
 	colW := make([]float64, ncol)
 	rowH := make([]float64, len(rows))
 	rowD := make([]float64, len(rows))
@@ -501,34 +531,134 @@ func (e *engine) matrix(rows [][]*box, open, close rune, sty style) *box {
 	for i := range rows {
 		totalH += rowH[i] + rowD[i]
 		if i > 0 {
-			totalH += rowGap
+			totalH += o.rowGap
 		}
 	}
+	// vertical-rule bookkeeping and left margin.
+	hasRule := func(g int) bool {
+		for _, v := range o.vrules {
+			if v == g {
+				return true
+			}
+		}
+		return false
+	}
+	x0 := 0.0
+	if hasRule(0) {
+		x0 = o.colGap // room for a left-edge rule
+	}
+	// column start positions and the right edge.
+	colStart := make([]float64, ncol)
+	x := x0
+	for j := 0; j < ncol; j++ {
+		colStart[j] = x
+		x += colW[j]
+		if j < ncol-1 {
+			x += gap(j)
+		}
+	}
+	rightEnd := x
 	grid := newBox(clsInner)
 	axis := e.axis(sty.px)
+	grid.h = totalH/2 + axis
+	grid.d = totalH/2 - axis
+	// draw vertical rules first (behind the cells).
+	if len(o.vrules) > 0 {
+		rt := e.mc(opentype.FractionRuleThickness, sty.px)
+		for _, g := range o.vrules {
+			var rx float64
+			switch {
+			case g <= 0:
+				rx = x0 / 2
+			case g >= ncol:
+				rx = rightEnd + o.colGap/2
+			default:
+				rx = colStart[g] - gap(g-1)/2
+			}
+			rule(grid, rx-rt/2, -grid.h, rt, grid.h+grid.d)
+		}
+	}
 	y := -(totalH / 2) - axis
 	for i, r := range rows {
 		y += rowH[i]
-		x := 0.0
 		for j := 0; j < ncol; j++ {
 			if j < len(r) && r[j] != nil {
-				place(grid, r[j], x+(colW[j]-r[j].w)/2, y)
+				var off float64
+				switch align(j) {
+				case alignR:
+					off = colW[j] - r[j].w
+				case alignC:
+					off = (colW[j] - r[j].w) / 2
+				}
+				place(grid, r[j], colStart[j]+off, y)
 			}
-			x += colW[j] + colGap
 		}
-		y += rowD[i] + rowGap
+		y += rowD[i] + o.rowGap
 	}
-	gw := colGap * float64(ncol-1)
-	for j := 0; j < ncol; j++ {
-		gw += colW[j]
+	gw := rightEnd
+	if hasRule(ncol) {
+		gw += o.colGap
 	}
 	grid.w = gw
-	grid.h = totalH/2 + axis
-	grid.d = totalH/2 - axis
-	if open == 0 && close == 0 {
-		return grid
+	return grid
+}
+
+// alignedAligns returns the alternating right/left column alignments used by the
+// aligned/split environments (rl pairs joined on &).
+func alignedAligns(ncol int) []colAlign {
+	a := make([]colAlign, ncol)
+	for j := range a {
+		if j%2 == 0 {
+			a[j] = alignR
+		} else {
+			a[j] = alignL
+		}
 	}
-	return e.delimited(grid, open, close, sty)
+	return a
+}
+
+// alignedGaps gives tight gaps inside each rl pair and wider gaps between pairs.
+func alignedGaps(ncol, px int) []float64 {
+	if ncol <= 1 {
+		return nil
+	}
+	g := make([]float64, ncol-1)
+	for j := range g {
+		if j%2 == 0 { // between the right and left halves of a pair
+			g[j] = float64(px) * 0.17
+		} else { // between two pairs
+			g[j] = float64(px) * 0.9
+		}
+	}
+	return g
+}
+
+// finishEnv lays out a parsed environment's rows according to its kind.
+// cellPx is the pixel size cells were typeset at (script size for smallmatrix).
+func (e *engine) finishEnv(info envInfo, rows [][]*box, aligns []colAlign, vrules []int, cellPx int, sty style) *box {
+	ncol := 0
+	for _, r := range rows {
+		if len(r) > ncol {
+			ncol = len(r)
+		}
+	}
+	p := float64(cellPx)
+	switch info.kind {
+	case kindArray:
+		return e.gridLayout(rows, gridOpts{aligns: aligns, colGap: p * 0.5, rowGap: p * 0.4, vrules: vrules}, sty)
+	case kindAligned:
+		return e.gridLayout(rows, gridOpts{aligns: alignedAligns(ncol), gaps: alignedGaps(ncol, cellPx), colGap: p * 0.5, rowGap: p * 0.5}, sty)
+	case kindGathered:
+		return e.gridLayout(rows, gridOpts{colGap: p * 0.6, rowGap: p * 0.5}, sty)
+	case kindSmall:
+		return e.gridLayout(rows, gridOpts{colGap: p * 0.6, rowGap: p * 0.35}, sty)
+	default: // matrix family
+		grid := e.gridLayout(rows, gridOpts{colGap: p * 0.6, rowGap: p * 0.4}, sty)
+		if info.open == 0 && info.close == 0 {
+			return grid
+		}
+		return e.delimited(grid, info.open, info.close, sty)
+	}
 }
 
 // document wraps a laid-out box in a padded, baseline-shifted SVG root.

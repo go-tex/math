@@ -338,14 +338,24 @@ func (e *engine) parseEnv(toks []token, sty style) (*box, atomClass, bool, []tok
 		return nil, 0, false, nil, fmt.Errorf(`texmath: \begin{ unterminated`)
 	}
 	toks = toks[i+1:]
-	dl, ok := envDelims[env]
+	info, ok := envTable[env]
 	if !ok {
 		return nil, 0, false, nil, fmt.Errorf("texmath: unknown environment %q", env)
 	}
-	open, close := dl[0], dl[1]
+	// array reads a {lcr|…} column specification before its body. A missing or
+	// unterminated spec falls back to all-centred columns rather than erroring.
+	var aligns []colAlign
+	var vrules []int
+	if info.kind == kindArray {
+		aligns, vrules, toks = readColSpec(toks)
+	}
+	// smallmatrix typesets its cells at script size; other envs use text style.
+	csty := sty.inner()
+	if info.kind == kindSmall {
+		csty.px = e.scriptSize(csty.px)
+	}
 	var rows [][]*box
 	var row []*box
-	csty := sty.inner()
 	for {
 		cell, rest, err := e.parseList(toks, csty, stopCell)
 		if err != nil {
@@ -370,9 +380,83 @@ func (e *engine) parseEnv(toks []token, sty style) (*box, atomClass, bool, []tok
 			if err != nil {
 				return nil, 0, false, nil, err
 			}
-			return e.matrix(rows, open, close, sty), clsInner, false, r, nil
+			return e.finishEnv(info, rows, aligns, vrules, csty.px, sty), clsInner, false, r, nil
 		}
 	}
+}
+
+// readColSpec parses an array column specification such as {|c|c|} or {lcr}.
+// It returns the per-column alignments, the gap indices (0..ncol) carrying a
+// vertical rule, and the remaining tokens. If no brace group follows, all
+// columns default to centred (aligns nil) — a sensible fallback. Paragraph
+// columns p{…}/m{…}/b{…} are NOT supported: their width is ignored and they are
+// treated as flush-left. Unknown column letters fall back to centred.
+func readColSpec(toks []token) (aligns []colAlign, vrules []int, rest []token) {
+	if len(toks) == 0 || toks[0].kind != tLBrace {
+		return nil, nil, toks // no spec: fall back to all-centred columns
+	}
+	// collect the tokens between the outer braces (nested braces included).
+	depth := 1
+	i := 1
+	var spec []token
+	for ; i < len(toks); i++ {
+		t := toks[i]
+		switch t.kind {
+		case tLBrace:
+			depth++
+		case tRBrace:
+			depth--
+			if depth == 0 {
+				i++ // consume the closing brace
+				goto interpret
+			}
+		}
+		spec = append(spec, t)
+	}
+interpret:
+	col := 0
+	for j := 0; j < len(spec); j++ {
+		t := spec[j]
+		if t.kind != tChar {
+			continue // ignore stray control sequences / braces
+		}
+		switch t.r {
+		case '|':
+			vrules = append(vrules, col)
+		case 'l':
+			aligns = append(aligns, alignL)
+			col++
+		case 'c':
+			aligns = append(aligns, alignC)
+			col++
+		case 'r':
+			aligns = append(aligns, alignR)
+			col++
+		case 'p', 'm', 'b':
+			// paragraph/vertically-aligned column: width unsupported → treat as l.
+			aligns = append(aligns, alignL)
+			col++
+			if j+1 < len(spec) && spec[j+1].kind == tLBrace { // skip the {width} group
+				d := 0
+				for j++; j < len(spec); j++ {
+					if spec[j].kind == tLBrace {
+						d++
+					} else if spec[j].kind == tRBrace {
+						if d--; d == 0 {
+							break
+						}
+					}
+				}
+			}
+		default:
+			if isLetter(t.r) { // unknown column letter → sensible fallback: centred
+				aligns = append(aligns, alignC)
+				col++
+			}
+			// other punctuation (spaces, @, *) is ignored.
+		}
+	}
+	return aligns, vrules, toks[i:]
 }
 
 func (e *engine) consumeEnd(toks []token, env string) ([]token, error) {
@@ -573,10 +657,36 @@ var opLimits = map[string]bool{
 	"min": true, "sup": true, "inf": true,
 }
 
-var envDelims = map[string][2]rune{
-	"matrix": {0, 0}, "pmatrix": {'(', ')'}, "bmatrix": {'[', ']'},
-	"Bmatrix": {'{', '}'}, "vmatrix": {'|', '|'}, "Vmatrix": {'‖', '‖'},
-	"cases": {'{', 0},
+// envKind selects how a math environment is laid out.
+type envKind uint8
+
+const (
+	kindMatrix   envKind = iota // centred columns, optional stretchy delimiters
+	kindArray                   // per-column l/c/r alignment with | vertical rules
+	kindAligned                 // alternating right/left columns (aligned/split)
+	kindGathered                // each row a single centred block
+	kindSmall                   // matrix at script size, no delimiters
+)
+
+// envInfo describes a supported \begin…\end environment.
+type envInfo struct {
+	kind        envKind
+	open, close rune // outer delimiters (kindMatrix only)
+}
+
+var envTable = map[string]envInfo{
+	"matrix":      {kindMatrix, 0, 0},
+	"pmatrix":     {kindMatrix, '(', ')'},
+	"bmatrix":     {kindMatrix, '[', ']'},
+	"Bmatrix":     {kindMatrix, '{', '}'},
+	"vmatrix":     {kindMatrix, '|', '|'},
+	"Vmatrix":     {kindMatrix, '‖', '‖'},
+	"cases":       {kindMatrix, '{', 0},
+	"array":       {kindArray, 0, 0},
+	"aligned":     {kindAligned, 0, 0},
+	"split":       {kindAligned, 0, 0},
+	"gathered":    {kindGathered, 0, 0},
+	"smallmatrix": {kindSmall, 0, 0},
 }
 
 // symbols maps a control-sequence name to its glyph and atom class.
