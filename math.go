@@ -14,7 +14,10 @@
 // alphabets (\mathbb, \mathcal, \mathfrak, \mathrm, \mathbf, \mathsf, \mathtt,
 // \mathit); \text; matrices (matrix/pmatrix/bmatrix/vmatrix/Vmatrix/cases),
 // array (with an l/c/r + | column spec), aligned/split, gathered and
-// smallmatrix; primes; spacing commands; and \displaystyle/\textstyle.
+// smallmatrix; primes; spacing commands; \displaystyle/\textstyle; declarative
+// in-math font switches (\rm \bf \it \sf \tt \cal \sl); named operators (\log,
+// \sin, \lim, …) and \operatorname / \operatorname*; and the modular
+// annotations \bmod, \pmod, \mod and \pod.
 package math
 
 import (

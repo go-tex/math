@@ -3,7 +3,10 @@
 
 package math
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // ── tokens ──────────────────────────────────────────────────────────────────
 
@@ -140,6 +143,17 @@ func (e *engine) parseList(toks []token, sty style, stop stopMode) (*box, []toke
 				continue
 			case "scriptstyle":
 				sty.px, sty.display, sty.spacious, toks = e.scriptSize(sty.px), false, false, toks[1:]
+				continue
+			case "rm", "bf", "it", "sf", "tt", "cal", "sl":
+				// Declarative, group-scoped font switches (\rm, \bf, …): they alter
+				// the active alphabet for the REST of the current {…} group, unlike
+				// \mathrm{…} which takes a single argument. Because parseList runs
+				// afresh for each brace group and receives its style by value, the
+				// switch neither leaks past the closing brace nor into sibling
+				// groups — exactly TeX's scoping. \sl (slanted) has no dedicated
+				// Unicode math alphabet in the MATH font, so it is approximated by
+				// math italic.
+				sty.alpha, toks = fontSwitch[toks[0].text], toks[1:]
 				continue
 			}
 		}
@@ -301,6 +315,44 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 		return b, clsOrd, false, r, nil
 	case "begin":
 		return e.parseEnv(toks, sty)
+	case "operatorname":
+		// \operatorname{name} sets name upright with operator spacing; the starred
+		// form \operatorname*{name} sets sub/superscripts as limits in display.
+		star := false
+		if len(toks) > 0 && toks[0].kind == tChar && toks[0].r == '*' {
+			star, toks = true, toks[1:]
+		}
+		name, rest, err := readOpName(toks)
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		return e.opName(name, clsOp, sty), clsOp, star && sty.display, rest, nil
+	case "bmod":
+		// Binary "mod" operator (\bmod): "mod" set upright with binary spacing.
+		return e.opName("mod", clsBin, sty), clsBin, false, toks, nil
+	case "pmod":
+		n, rest, err := e.parseGroupArg(toks, sty)
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		return e.modBox('(', ')', "mod", n, sty), clsOrd, false, rest, nil
+	case "mod":
+		n, rest, err := e.parseGroupArg(toks, sty)
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		return e.modBox(0, 0, "mod", n, sty), clsOrd, false, rest, nil
+	case "pod":
+		n, rest, err := e.parseGroupArg(toks, sty)
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		return e.modBox('(', ')', "", n, sty), clsOrd, false, rest, nil
+	}
+	// named operators (\log \sin \lim …): upright name, operator class/spacing.
+	// The limit-taking members set sub/superscripts above/below in display.
+	if op, ok := namedOps[name]; ok {
+		return e.opName(op.text, clsOp, sty), clsOp, op.limits, toks, nil
 	}
 	// accents
 	if acc, ok := accents[name]; ok {
@@ -540,6 +592,77 @@ func (e *engine) mustGlyph(r rune, px int, cls atomClass) *box {
 	return newBox(cls)
 }
 
+// opName typesets s as an upright operator name (roman glyphs, no math-italic
+// mapping and no inter-atom spacing between the letters). A space in s becomes a
+// thin (3mu) kern — used by "lim sup"/"lim inf". The returned box carries class
+// cls (clsOp for operators, clsBin for \bmod).
+func (e *engine) opName(s string, cls atomClass, sty style) *box {
+	var items []*box
+	for _, r := range s {
+		if r == ' ' {
+			items = append(items, e.kern(float64(sty.px)*3/18))
+			continue
+		}
+		items = append(items, e.mustGlyph(r, sty.px, clsOrd))
+	}
+	b := e.hlist(items, style{px: sty.px})
+	b.cls = cls
+	return b
+}
+
+// modBox builds the parenthesised/unparenthesised modular annotations produced
+// by \pmod{n} → "(mod n)", \mod{n} → "mod n" and \pod{n} → "(n)". A quad space
+// (18mu) always precedes, as in plain TeX. open/close are 0 for the unbracketed
+// \mod form, and label is "" for \pod.
+func (e *engine) modBox(open, close rune, label string, n *box, sty style) *box {
+	items := []*box{e.kern(float64(sty.px))} // leading \quad
+	if open != 0 {
+		items = append(items, e.mustGlyph(open, sty.px, clsOrd))
+	}
+	if label != "" {
+		items = append(items, e.opName(label, clsOrd, sty), e.kern(float64(sty.px)*3/18))
+	}
+	if n != nil {
+		items = append(items, n)
+	}
+	if close != 0 {
+		items = append(items, e.mustGlyph(close, sty.px, clsOrd))
+	}
+	b := e.hlist(items, style{px: sty.px})
+	b.cls = clsOrd
+	return b
+}
+
+// readOpName reads the {name} argument of \operatorname, returning the plain
+// text between the (possibly nested) braces. tChar tokens contribute their rune;
+// thin/med spacing control symbols (\, \: \; \ ) become a space; other control
+// sequences are ignored. It errors on a missing or unterminated brace group.
+func readOpName(toks []token) (string, []token, error) {
+	if len(toks) == 0 || toks[0].kind != tLBrace {
+		return "", nil, fmt.Errorf(`texmath: \operatorname needs {name}`)
+	}
+	var sb strings.Builder
+	depth := 1
+	for i := 1; i < len(toks); i++ {
+		switch t := toks[i]; t.kind {
+		case tLBrace:
+			depth++
+		case tRBrace:
+			if depth--; depth == 0 {
+				return sb.String(), toks[i+1:], nil
+			}
+		case tChar:
+			sb.WriteString(t.text)
+		case tCtrl:
+			switch t.text {
+			case ",", ":", ";", " ":
+				sb.WriteByte(' ')
+			}
+		}
+	}
+	return "", nil, fmt.Errorf(`texmath: \operatorname unterminated {name}`)
+}
+
 // ── character classes & alphabets ───────────────────────────────────────────
 
 func charClass(r rune) atomClass {
@@ -649,12 +772,48 @@ var spaces = map[string]float64{
 	",": 3, ":": 4, ";": 5, "!": -3, "quad": 18, "qquad": 36, " ": 6,
 }
 
-// opLimits marks big operators that set sub/superscripts as limits in display.
+// opLimits marks the big-operator SYMBOLS (\sum, \prod, …) that set
+// sub/superscripts as limits in display. Named operators (\lim, \max, …) carry
+// their own limit flag via namedOps.
 var opLimits = map[string]bool{
 	"sum": true, "prod": true, "coprod": true, "bigcup": true, "bigcap": true,
 	"bigvee": true, "bigwedge": true, "bigoplus": true, "bigotimes": true,
-	"bigodot": true, "biguplus": true, "bigsqcup": true, "lim": true, "max": true,
-	"min": true, "sup": true, "inf": true,
+	"bigodot": true, "biguplus": true, "bigsqcup": true,
+}
+
+// fontSwitch maps a declarative two-letter font command to the alphabet it makes
+// active for the rest of the current group (see parseList).
+var fontSwitch = map[string]func(rune) rune{
+	"rm":  alphabetFor("mathrm"),
+	"bf":  alphabetFor("mathbf"),
+	"it":  alphabetFor("mathit"),
+	"sf":  alphabetFor("mathsf"),
+	"tt":  alphabetFor("mathtt"),
+	"cal": alphabetFor("mathcal"),
+	"sl":  alphabetFor("mathit"), // no slanted math alphabet → approximate with italic
+}
+
+// opInfo describes a named operator: the upright text to typeset and whether it
+// takes limits (sub/superscripts stacked above/below in display style).
+type opInfo struct {
+	text   string
+	limits bool
+}
+
+// namedOps are the log-like operators (\log, \sin, …). limits members follow
+// plain TeX: \lim, \liminf, \limsup, \max, \min, \sup, \inf, \det, \gcd and \Pr
+// set limits in display; the rest use ordinary scripts.
+var namedOps = map[string]opInfo{
+	"log": {"log", false}, "ln": {"ln", false}, "lg": {"lg", false}, "exp": {"exp", false},
+	"sin": {"sin", false}, "cos": {"cos", false}, "tan": {"tan", false}, "cot": {"cot", false},
+	"sec": {"sec", false}, "csc": {"csc", false},
+	"sinh": {"sinh", false}, "cosh": {"cosh", false}, "tanh": {"tanh", false}, "coth": {"coth", false},
+	"arcsin": {"arcsin", false}, "arccos": {"arccos", false}, "arctan": {"arctan", false},
+	"min": {"min", true}, "max": {"max", true}, "inf": {"inf", true}, "sup": {"sup", true},
+	"lim": {"lim", true}, "limsup": {"lim sup", true}, "liminf": {"lim inf", true},
+	"det": {"det", true}, "gcd": {"gcd", true}, "Pr": {"Pr", true},
+	"dim": {"dim", false}, "ker": {"ker", false}, "deg": {"deg", false},
+	"hom": {"hom", false}, "arg": {"arg", false},
 }
 
 // envKind selects how a math environment is laid out.
@@ -708,7 +867,7 @@ var symbols = map[string]sym{
 	"oint": {'∮', clsOp}, "iint": {'∬', clsOp}, "iiint": {'∭', clsOp},
 	"bigcup": {'⋃', clsOp}, "bigcap": {'⋂', clsOp}, "bigvee": {'⋁', clsOp}, "bigwedge": {'⋀', clsOp},
 	"bigoplus": {'⨁', clsOp}, "bigotimes": {'⨂', clsOp}, "bigodot": {'⨀', clsOp}, "bigsqcup": {'⨆', clsOp},
-	"biguplus": {'⨄', clsOp}, "lim": {'l', clsOp}, // lim rendered as text elsewhere ideally
+	"biguplus": {'⨄', clsOp}, // named operators (\lim, \max, …) live in namedOps, not here.
 	// binary operators
 	"times": {'×', clsBin}, "div": {'÷', clsBin}, "pm": {'±', clsBin}, "mp": {'∓', clsBin},
 	"cdot": {'⋅', clsBin}, "ast": {'∗', clsBin}, "star": {'⋆', clsBin}, "circ": {'∘', clsBin},
@@ -733,7 +892,9 @@ var symbols = map[string]sym{
 	"leftrightarrow": {'↔', clsRel}, "Leftarrow": {'⇐', clsRel}, "Rightarrow": {'⇒', clsRel},
 	"Leftrightarrow": {'⇔', clsRel}, "iff": {'⇔', clsRel}, "mapsto": {'↦', clsRel},
 	"longrightarrow": {'⟶', clsRel}, "longleftarrow": {'⟵', clsRel}, "implies": {'⟹', clsRel},
-	"uparrow": {'↑', clsRel}, "downarrow": {'↓', clsRel}, "updownarrow": {'↕', clsRel},
+	"Longrightarrow": {'⟹', clsRel}, "Longleftarrow": {'⟸', clsRel}, "Longleftrightarrow": {'⟺', clsRel},
+	"longmapsto": {'⟼', clsRel},
+	"uparrow":    {'↑', clsRel}, "downarrow": {'↓', clsRel}, "updownarrow": {'↕', clsRel},
 	"nearrow": {'↗', clsRel}, "searrow": {'↘', clsRel}, "swarrow": {'↙', clsRel}, "nwarrow": {'↖', clsRel},
 	"hookrightarrow": {'↪', clsRel}, "hookleftarrow": {'↩', clsRel},
 	// misc ordinary / symbols
