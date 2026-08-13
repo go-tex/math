@@ -160,11 +160,23 @@ func (e *engine) parseList(toks []token, sty style, stop stopMode) (*box, []toke
 		if atStop(toks, stop) {
 			return e.hlist(items, sty), toks, nil
 		}
-		nuc, cls, isOp, rest, err := e.parseAtom(toks, sty)
-		if err != nil {
-			return nil, nil, err
+		var nuc *box
+		var cls atomClass
+		var isOp bool
+		if k := toks[0].kind; k == tSup || k == tSub || k == tPrime {
+			// A script or prime with no preceding nucleus — e.g. $^1$ (a footnote or
+			// citation mark) or a leading prime. TeX attaches it to an empty nucleus
+			// rather than erroring; the script loop below consumes the ^/_/' tokens.
+			nuc, cls, isOp = newBox(clsOrd), clsOrd, false
+		} else {
+			var rest []token
+			var err error
+			nuc, cls, isOp, rest, err = e.parseAtom(toks, sty)
+			if err != nil {
+				return nil, nil, err
+			}
+			toks = rest
 		}
-		toks = rest
 		nuc.cls = cls
 
 		// scripts and primes

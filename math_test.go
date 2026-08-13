@@ -124,10 +124,10 @@ func mustRender(t *testing.T, r *Renderer, tex string) string {
 func TestErrors(t *testing.T) {
 	r := newRenderer(t)
 	for _, tex := range []string{
-		`\nope`,              // unknown command
-		`a}`,                 // unexpected close brace
-		`{a`,                 // missing close brace
-		`^2`, `_i`, `&`, `'`, // atoms that need a nucleus / are misplaced
+		`\nope`,                          // unknown command
+		`a}`,                             // unexpected close brace
+		`{a`,                             // missing close brace
+		`&`,                              // an alignment tab outside a matrix/array is misplaced
 		`\frac{a}`,                       // missing frac arg
 		`x^`,                             // missing script atom
 		`\sqrt[3]{`,                      // missing radical body
@@ -153,6 +153,25 @@ func TestErrors(t *testing.T) {
 		t.Run(tex, func(t *testing.T) {
 			if _, err := r.RenderSVG(tex, 32); err == nil {
 				t.Errorf("render(%q) should error", tex)
+			}
+		})
+	}
+}
+
+// A script or prime with no preceding nucleus is valid TeX — it attaches to an
+// empty box. This is exactly how a footnote/citation mark like $^1$ is set, which
+// real document classes (amsart's \maketitle) emit; rejecting it aborted or
+// derailed the whole compile.
+func TestEmptyBaseScripts(t *testing.T) {
+	r := newRenderer(t)
+	for _, tex := range []string{`^1`, `_2`, `^{1}`, `_{ab}`, `'`, `^a_b`, `x + ^1`} {
+		t.Run(tex, func(t *testing.T) {
+			svg, err := r.RenderSVG(tex, 32)
+			if err != nil {
+				t.Fatalf("render(%q) errored: %v", tex, err)
+			}
+			if !strings.HasPrefix(svg, "<svg") {
+				t.Errorf("render(%q): malformed svg", tex)
 			}
 		})
 	}
