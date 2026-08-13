@@ -55,6 +55,43 @@ func (r *Renderer) RenderDisplaySVG(tex string, sizePx int) (string, error) {
 	return r.render(tex, sizePx, true)
 }
 
+// Metrics describes a rendered math box in pixels. Width is the advance width;
+// Height the extent above the baseline; Depth the extent below it. In the SVG
+// returned alongside these metrics the baseline sits at y=Height, and the box
+// spans [0,Width]×[0,Height+Depth] with no padding — so a caller can align the
+// math baseline with its surrounding text baseline exactly (place the SVG's top
+// edge Height above the baseline), which RenderSVG's padded, baseline-agnostic
+// output does not permit.
+type Metrics struct {
+	Width, Height, Depth float64
+}
+
+// RenderSVGMetrics typesets tex at inline/text style like RenderSVG, but returns
+// a tightly-cropped SVG together with its exact box Metrics (advance width,
+// height above the baseline, depth below). This is the baseline-aware form: the
+// caller can place the box so the math baseline meets the text baseline instead
+// of guessing from the overall height.
+func (r *Renderer) RenderSVGMetrics(tex string, sizePx int) (string, Metrics, error) {
+	return r.renderM(tex, sizePx, false)
+}
+
+// RenderDisplaySVGMetrics is RenderSVGMetrics in display style.
+func (r *Renderer) RenderDisplaySVGMetrics(tex string, sizePx int) (string, Metrics, error) {
+	return r.renderM(tex, sizePx, true)
+}
+
+func (r *Renderer) renderM(tex string, sizePx int, display bool) (string, Metrics, error) {
+	if sizePx <= 0 {
+		sizePx = 40
+	}
+	e := &engine{font: r.font, upem: float64(r.font.UnitsPerEm())}
+	b, _, err := e.parseList(tokenize(tex), style{px: sizePx, display: display, spacious: true}, stopEnd)
+	if err != nil {
+		return "", Metrics{}, err
+	}
+	return e.documentTight(b), Metrics{Width: b.w, Height: b.h, Depth: b.d}, nil
+}
+
 func (r *Renderer) render(tex string, sizePx int, display bool) (string, error) {
 	if sizePx <= 0 {
 		sizePx = 40
@@ -674,6 +711,21 @@ func (e *engine) document(b *box) string {
 		ftoa(w), ftoa(h), ftoa(w), ftoa(h))
 	fmt.Fprintf(&s, `<g fill="currentColor" transform="translate(%s,%s)">%s</g>`,
 		ftoa(pad), ftoa(pad+b.h), b.String())
+	s.WriteString(`</svg>`)
+	return s.String()
+}
+
+// documentTight is document without the cosmetic padding: the baseline sits at
+// y=b.h, the viewBox is exactly the box's advance width × (height+depth). It
+// backs RenderSVGMetrics so callers get a box whose reported Metrics match the
+// SVG one-to-one and whose baseline can be aligned with surrounding text.
+func (e *engine) documentTight(b *box) string {
+	w, h := b.w, b.h+b.d
+	var s strings.Builder
+	fmt.Fprintf(&s, `<svg xmlns="http://www.w3.org/2000/svg" width="%s" height="%s" viewBox="0 0 %s %s">`,
+		ftoa(w), ftoa(h), ftoa(w), ftoa(h))
+	fmt.Fprintf(&s, `<g fill="currentColor" transform="translate(%s,%s)">%s</g>`,
+		ftoa(0), ftoa(b.h), b.String())
 	s.WriteString(`</svg>`)
 	return s.String()
 }

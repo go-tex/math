@@ -206,6 +206,54 @@ func TestDefaultSizeAndEmpty(t *testing.T) {
 	}
 }
 
+// TestRenderMetrics checks the baseline-aware API: the returned Metrics are
+// positive and self-consistent with the tight SVG (baseline at y=Height, viewBox
+// = Width×(Height+Depth), no padding), for both inline and display style.
+func TestRenderMetrics(t *testing.T) {
+	r := newRenderer(t)
+	for _, disp := range []bool{false, true} {
+		var svg string
+		var m Metrics
+		var err error
+		if disp {
+			svg, m, err = r.RenderDisplaySVGMetrics("x+1", 40)
+		} else {
+			svg, m, err = r.RenderSVGMetrics("x+1", 40)
+		}
+		if err != nil {
+			t.Fatalf("metrics(display=%v): %v", disp, err)
+		}
+		if m.Width <= 0 || m.Height <= 0 || m.Depth < 0 {
+			t.Fatalf("metrics(display=%v) = %+v, want positive width/height, non-neg depth", disp, m)
+		}
+		// The tight SVG's viewBox height is exactly Height+Depth, its width Width;
+		// there is no padding (unlike RenderSVG).
+		wantVB := `viewBox="0 0 ` + ftoa(m.Width) + ` ` + ftoa(m.Height+m.Depth) + `"`
+		if !strings.Contains(svg, wantVB) {
+			t.Errorf("display=%v: viewBox not tight to metrics; want %s in %.90s", disp, wantVB, svg)
+		}
+		// The content group is translated so the baseline sits at y=Height.
+		wantBaseline := `transform="translate(` + ftoa(0) + `,` + ftoa(m.Height) + `)"`
+		if !strings.Contains(svg, wantBaseline) {
+			t.Errorf("display=%v: baseline not at y=Height; want %s", disp, wantBaseline)
+		}
+	}
+	// A descender (y) must report positive depth; an ascender-only token (l) must
+	// report more height than depth — proving the split is real, not h/2.
+	_, my, _ := r.RenderSVGMetrics("y", 40)
+	if my.Depth <= 0 {
+		t.Errorf("'y' depth = %v, want > 0 (it has a descender)", my.Depth)
+	}
+	_, ml, _ := r.RenderSVGMetrics("l", 40)
+	if ml.Height <= ml.Depth {
+		t.Errorf("'l' height %v not greater than depth %v", ml.Height, ml.Depth)
+	}
+	// An error still surfaces through the metrics API.
+	if _, _, err := r.RenderSVGMetrics(`\nonesuch`, 40); err == nil {
+		t.Error("metrics API swallowed an unknown-command error")
+	}
+}
+
 func TestAlphabets(t *testing.T) {
 	// hole-mapped letters resolve to the reserved code points.
 	cases := []struct {
