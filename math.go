@@ -466,6 +466,16 @@ func (e *engine) phantom(b *box, name string) *box {
 	return out
 }
 
+// braWrap wraps a box in fixed-size open/close delimiter glyphs (braket/physics
+// notation: \ket, \bra, \norm, …).
+func (e *engine) braWrap(open, close rune, arg *box, sty style) *box {
+	return e.hlist([]*box{
+		e.mustGlyph(open, sty.px, clsOpen),
+		arg,
+		e.mustGlyph(close, sty.px, clsClose),
+	}, sty)
+}
+
 // negate overlays a slash on a box, centred on its ink, for \not.
 func (e *engine) negate(b *box, sty style) *box {
 	out := newBox(b.cls)

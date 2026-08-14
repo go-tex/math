@@ -423,6 +423,25 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 	case "limits", "nolimits", "displaylimits":
 		// script-placement modifiers on the preceding operator — transparent here.
 		return newBox(clsOrd), clsOrd, false, toks, nil
+	case "ket", "bra", "braket", "norm", "abs", "Set", "set", "abs*", "norm*":
+		// braket / physics notation (used via package, so unresolved by the engine's
+		// macro pass): wrap the argument in the standard delimiters.
+		a, r, err := e.parseGroupArg(toks, sty)
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		open, close := braketDelims(name)
+		return e.braWrap(open, close, a, sty), clsInner, false, r, nil
+	case "ketbra":
+		x, r1, err := e.parseGroupArg(toks, sty)
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		y, r2, err := e.parseGroupArg(r1, sty)
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		return e.hlist([]*box{e.braWrap('|', '⟩', x, sty), e.braWrap('⟨', '|', y, sty)}, sty), clsInner, false, r2, nil
 	case "begin":
 		return e.parseEnv(toks, sty)
 	case "operatorname":
@@ -751,6 +770,24 @@ func bigDelimFactor(name string) (float64, bool) {
 		return 3.0, true
 	}
 	return 0, false
+}
+
+// braketDelims returns the (open, close) delimiter runes for a braket/physics
+// notation command.
+func braketDelims(name string) (rune, rune) {
+	switch name {
+	case "ket":
+		return '|', '⟩'
+	case "bra":
+		return '⟨', '|'
+	case "braket":
+		return '⟨', '⟩'
+	case "norm", "norm*":
+		return '‖', '‖'
+	case "Set", "set":
+		return '{', '}'
+	}
+	return '|', '|' // abs / abs*
 }
 
 // mathClassFor maps an atom-class wrapper command to the class it forces.

@@ -201,6 +201,23 @@ func TestCensusBatch(t *testing.T) {
 	}
 }
 
+// braket / physics notation wraps its argument in standard delimiters. (These
+// fire only when a paper relies on the package: a paper that \newcommand's \ket
+// itself is expanded by the engine before the source reaches go-tex/math.)
+func TestBraketNotation(t *testing.T) {
+	r := newRenderer(t)
+	for _, tex := range []string{
+		`\ket{\psi}`, `\bra{\phi}`, `\braket{\phi|\psi}`, `\ketbra{\psi}{\phi}`,
+		`\norm{x}`, `\abs{-y}`, `\Set{x}`, `\ket{0}+\ket{1}`,
+	} {
+		t.Run(tex, func(t *testing.T) { renderOK(t, r, tex) })
+	}
+	// \ket{x} draws more glyphs than bare x (the two delimiters).
+	if k, x := strings.Count(mustRender(t, r, `\ket{x}`), "<path"), strings.Count(mustRender(t, r, `x`), "<path"); k <= x {
+		t.Errorf("\\ket{x} has %d glyph paths, x has %d — delimiters missing", k, x)
+	}
+}
+
 func TestStructure(t *testing.T) {
 	r := newRenderer(t)
 	// fraction and radical draw a rule.
