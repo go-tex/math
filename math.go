@@ -423,6 +423,49 @@ func (e *engine) overUnder(base, extra *box, over bool, sty style) *box {
 	return out
 }
 
+// boxed draws a rectangular frame around the content (\boxed).
+func (e *engine) boxed(b *box, sty style) *box {
+	pad := float64(sty.px) * 0.15
+	rt := e.mc(opentype.FractionRuleThickness, sty.px)
+	if rt <= 0 {
+		rt = float64(sty.px) * 0.05
+	}
+	out := newBox(clsOrd)
+	out.w = b.w + 2*pad
+	place(out, b, pad, 0)
+	top, bot := -(b.h + pad), b.d+pad
+	out.h, out.d = b.h+pad, b.d+pad
+	rule(out, 0, top, out.w, rt)          // top
+	rule(out, 0, bot-rt, out.w, rt)       // bottom
+	rule(out, 0, top, rt, bot-top)        // left
+	rule(out, out.w-rt, top, rt, bot-top) // right
+	return out
+}
+
+// brace approximates \overbrace/\underbrace with a rule above/below the content
+// (the exact curly brace is not modelled); a following sub/superscript labels it.
+func (e *engine) brace(b *box, over bool, sty style) *box {
+	if over {
+		return e.overline(b, sty)
+	}
+	return e.underline(b, sty)
+}
+
+// phantom reserves the argument's dimensions without drawing it (\phantom), or
+// only its width (\hphantom) / only its height+depth (\vphantom).
+func (e *engine) phantom(b *box, name string) *box {
+	out := newBox(clsOrd)
+	switch name {
+	case "hphantom":
+		out.w = b.w
+	case "vphantom":
+		out.h, out.d = b.h, b.d
+	default:
+		out.w, out.h, out.d = b.w, b.h, b.d
+	}
+	return out
+}
+
 // negate overlays a slash on a box, centred on its ink, for \not.
 func (e *engine) negate(b *box, sty style) *box {
 	out := newBox(b.cls)

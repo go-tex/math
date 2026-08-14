@@ -173,6 +173,34 @@ func TestIfmmodeResolves(t *testing.T) {
 	}
 }
 
+// The census batch: \ensuremath, \mathscr, atom-class wrappers, \hbox/\mbox,
+// \boxed, \overbrace/\underbrace, \phantom, \limits, and added symbol aliases.
+func TestCensusBatch(t *testing.T) {
+	r := newRenderer(t)
+	for _, tex := range []string{
+		`\ensuremath{x+1}`, `\mathscr{ABH}`, `\mathbin{\star}`, `\mathrel{R}`,
+		`\mathord{!}`, `\mathopen{[}x\mathclose{]}`,
+		`\hbox{note}`, `\mbox{if } x>0`, `\boxed{E=mc^2}`,
+		`\underbrace{a+b}_{s}`, `\overbrace{x+y}^{t}`,
+		`\phantom{xy}z`, `\hphantom{x}y`, `\vphantom{X}y`,
+		`A\vDash B`, `p\land q\lor r`, `\llbracket x\rrbracket`, `a\rtimes b`,
+		`x\hdots y`, `\sum\limits_{i}a_i`, `\therefore x`, `a\boxplus b`, `\bigstar`,
+	} {
+		t.Run(tex, func(t *testing.T) { renderOK(t, r, tex) })
+	}
+	// \boxed draws a frame (rules); \phantom draws no ink but reserves width.
+	if !strings.Contains(mustRender(t, r, `\boxed{x}`), "<rect") {
+		t.Error("\\boxed drew no frame")
+	}
+	if strings.Contains(mustRender(t, r, `\phantom{x}`), "<path") {
+		t.Error("\\phantom drew ink")
+	}
+	_, ph, _ := r.RenderSVGMetrics(`\phantom{MMM}`, 40)
+	if ph.Width <= 0 {
+		t.Error("\\phantom reserved no width")
+	}
+}
+
 func TestStructure(t *testing.T) {
 	r := newRenderer(t)
 	// fraction and radical draw a rule.

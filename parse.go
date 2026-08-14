@@ -380,7 +380,7 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 			return nil, 0, false, nil, err
 		}
 		return e.underline(b, sty), clsOrd, false, r, nil
-	case "text", "mathrm", "mathbf", "mathbb", "mathcal", "mathfrak", "mathsf", "mathtt", "mathit", "boldsymbol":
+	case "text", "textrm", "textnormal", "mbox", "hbox", "mathrm", "mathbf", "mathbb", "mathcal", "mathscr", "EuScript", "mathfrak", "mathsf", "mathtt", "mathit", "boldsymbol":
 		asty := sty
 		asty.alpha = alphabetFor(name)
 		b, r, err := e.parseGroupArg(toks, asty)
@@ -388,6 +388,41 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 			return nil, 0, false, nil, err
 		}
 		return b, clsOrd, false, r, nil
+	case "ensuremath":
+		// \ensuremath{x}: this renderer is always in math, so just typeset x.
+		b, r, err := e.parseGroupArg(toks, sty)
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		return b, clsOrd, false, r, nil
+	case "mathbin", "mathrel", "mathord", "mathop", "mathopen", "mathclose", "mathpunct", "mathinner":
+		// atom-class wrappers: typeset the argument, forcing its spacing class.
+		b, r, err := e.parseGroupArg(toks, sty)
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		return b, mathClassFor(name), name == "mathop" && sty.display, r, nil
+	case "boxed":
+		b, r, err := e.parseGroupArg(toks, sty)
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		return e.boxed(b, sty), clsOrd, false, r, nil
+	case "underbrace", "overbrace":
+		b, r, err := e.parseGroupArg(toks, sty)
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		return e.brace(b, name == "overbrace", sty), clsOp, false, r, nil
+	case "phantom", "hphantom", "vphantom":
+		b, r, err := e.parseGroupArg(toks, sty)
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		return e.phantom(b, name), clsOrd, false, r, nil
+	case "limits", "nolimits", "displaylimits":
+		// script-placement modifiers on the preceding operator — transparent here.
+		return newBox(clsOrd), clsOrd, false, toks, nil
 	case "begin":
 		return e.parseEnv(toks, sty)
 	case "operatorname":
@@ -718,6 +753,27 @@ func bigDelimFactor(name string) (float64, bool) {
 	return 0, false
 }
 
+// mathClassFor maps an atom-class wrapper command to the class it forces.
+func mathClassFor(name string) atomClass {
+	switch name {
+	case "mathbin":
+		return clsBin
+	case "mathrel":
+		return clsRel
+	case "mathop":
+		return clsOp
+	case "mathopen":
+		return clsOpen
+	case "mathclose":
+		return clsClose
+	case "mathpunct":
+		return clsPunct
+	case "mathinner":
+		return clsInner
+	}
+	return clsOrd // mathord
+}
+
 // bigDelimClass maps a \big-family suffix to its atom class: l→open, r→close,
 // m→relation, none→ordinary.
 func bigDelimClass(name string) atomClass {
@@ -891,8 +947,12 @@ func mathItalic(r rune) rune {
 // alphabetFor returns the letter-mapping function for a \math… alphabet command.
 func alphabetFor(name string) func(rune) rune {
 	switch name {
-	case "text", "mathrm":
+	case "text", "mathrm", "hbox", "mbox", "textrm", "textnormal":
 		return func(r rune) rune { return r } // upright, unchanged
+	case "mathscr", "EuScript":
+		// Script — the MATH font renders the Unicode script block (shared with
+		// \mathcal here); a distinct roundhand face is not available.
+		return blockMapper(0x1D49C, 0x1D4B6, 0, calHoles)
 	case "mathbf":
 		return blockMapper(0x1D400, 0x1D41A, 0x1D7CE, nil)
 	case "mathit":
@@ -1071,6 +1131,25 @@ var symbols = map[string]sym{
 	"preceq": {'⪯', clsRel}, "succeq": {'⪰', clsRel}, "models": {'⊨', clsRel}, "vdash": {'⊢', clsRel},
 	"dashv": {'⊣', clsRel}, "perp": {'⊥', clsRel}, "mid": {'∣', clsRel}, "parallel": {'∥', clsRel},
 	"doteqdot": {'≑', clsRel}, "bowtie": {'⋈', clsRel},
+	// more relations (amssymb / stmaryrd / mathtools), from the corpus census
+	"vDash": {'⊨', clsRel}, "Vdash": {'⊩', clsRel}, "Vvdash": {'⊪', clsRel}, "nsim": {'≁', clsRel},
+	"sqsubset": {'⊏', clsRel}, "sqsupset": {'⊐', clsRel},
+	"vartriangleleft": {'⊲', clsRel}, "vartriangleright": {'⊳', clsRel},
+	"preccurlyeq": {'≼', clsRel}, "succcurlyeq": {'≽', clsRel},
+	"between": {'≬', clsRel}, "pitchfork": {'⋔', clsRel}, "therefore": {'∴', clsRel}, "because": {'∵', clsRel},
+	"rightsquigarrow": {'⇝', clsRel}, "leadsto": {'⇝', clsRel},
+	"twoheadrightarrow": {'↠', clsRel}, "twoheadleftarrow": {'↞', clsRel},
+	"rightrightarrows": {'⇉', clsRel}, "leftleftarrows": {'⇇', clsRel},
+	"curvearrowright": {'↷', clsRel}, "curvearrowleft": {'↶', clsRel},
+	"circlearrowright": {'↻', clsRel}, "circlearrowleft": {'↺', clsRel},
+	// binary-operator and bracket aliases
+	"land": {'∧', clsBin}, "lor": {'∨', clsBin}, "rtimes": {'⋊', clsBin}, "ltimes": {'⋉', clsBin},
+	"amalg":   {'⨿', clsBin},
+	"boxplus": {'⊞', clsBin}, "boxtimes": {'⊠', clsBin}, "boxminus": {'⊟', clsBin}, "boxdot": {'⊡', clsBin},
+	"llbracket": {'⟦', clsOpen}, "rrbracket": {'⟧', clsClose},
+	// dots and misc ordinary
+	"hdots": {'⋯', clsInner}, "dotsc": {'…', clsInner}, "dotsb": {'⋯', clsInner}, "dotsm": {'⋯', clsInner}, "dotsi": {'⋯', clsInner},
+	"hslash": {'ℏ', clsOrd}, "bigstar": {'★', clsOrd},
 	// arrows
 	"leftarrow": {'←', clsRel}, "gets": {'←', clsRel}, "rightarrow": {'→', clsRel}, "to": {'→', clsRel},
 	"leftrightarrow": {'↔', clsRel}, "Leftarrow": {'⇐', clsRel}, "Rightarrow": {'⇒', clsRel},
