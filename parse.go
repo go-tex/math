@@ -925,6 +925,26 @@ var symbols = map[string]sym{
 	"langle": {'⟨', clsOpen}, "rangle": {'⟩', clsClose}, "lceil": {'⌈', clsOpen}, "rceil": {'⌉', clsClose},
 	"lfloor": {'⌊', clsOpen}, "rfloor": {'⌋', clsClose}, "vert": {'|', clsOrd}, "Vert": {'‖', clsOrd},
 	"lbrace": {'{', clsOpen}, "rbrace": {'}', clsClose}, "|": {'‖', clsOrd},
+	// amsmath paired delimiters (\lvert…\rvert = |x|, \lVert…\rVert = ‖x‖): the
+	// bodies \abs and \norm expand to, and used directly.
+	"lvert": {'|', clsOpen}, "rvert": {'|', clsClose},
+	"lVert": {'‖', clsOpen}, "rVert": {'‖', clsClose},
+	"lgroup": {'⟮', clsOpen}, "rgroup": {'⟯', clsClose},
+	// amsmath colon-relations and negated / slanted relations
+	"colon": {':', clsPunct}, "coloneqq": {'≔', clsRel}, "coloneq": {'≔', clsRel},
+	"eqqcolon": {'≕', clsRel}, "eqcolon": {'≕', clsRel},
+	"nmid": {'∤', clsRel}, "nparallel": {'∦', clsRel},
+	"subsetneq": {'⊊', clsRel}, "supsetneq": {'⊋', clsRel},
+	"subsetneqq": {'⫋', clsRel}, "supsetneqq": {'⫌', clsRel},
+	"leqslant": {'⩽', clsRel}, "geqslant": {'⩾', clsRel},
+	"lesssim": {'≲', clsRel}, "gtrsim": {'≳', clsRel},
+	"lessgtr": {'≶', clsRel}, "gtrless": {'≷', clsRel},
+	"trianglelefteq": {'⊴', clsRel}, "trianglerighteq": {'⊵', clsRel},
+	"vartriangle": {'△', clsRel}, "triangleq": {'≜', clsRel},
+	// amssymb ordinaries seen in the corpus
+	"Diamond": {'◇', clsOrd}, "Box": {'□', clsOrd}, "square": {'□', clsOrd},
+	"blacksquare": {'■', clsOrd}, "lozenge": {'◊', clsOrd}, "complement": {'∁', clsOrd},
+	"circledast": {'⊛', clsBin}, "circledcirc": {'⊚', clsBin},
 	// control symbols
 	"{": {'{', clsOpen}, "}": {'}', clsClose},
 }

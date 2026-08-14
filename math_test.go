@@ -91,6 +91,20 @@ func TestFeatures(t *testing.T) {
 	}
 }
 
+// The amsmath paired delimiters, colon-relations and extra relation/ordinary
+// symbols added for real-paper coverage all resolve to a glyph and render.
+func TestAddedSymbols(t *testing.T) {
+	r := newRenderer(t)
+	for _, tex := range []string{
+		`\lvert x \rvert`, `\lVert v \rVert`, `\left\lvert a \right\rvert`,
+		`f \colon A \to B`, `x \coloneqq y`, `a \eqqcolon b`,
+		`p \nmid q`, `A \subsetneq B`, `x \leqslant y \geqslant z`,
+		`u \lesssim v \gtrsim w`, `\Diamond \square \blacksquare`,
+	} {
+		t.Run(tex, func(t *testing.T) { renderOK(t, r, tex) })
+	}
+}
+
 func TestStructure(t *testing.T) {
 	r := newRenderer(t)
 	// fraction and radical draw a rule.
