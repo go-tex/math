@@ -128,6 +128,27 @@ func TestBinomBigOverset(t *testing.T) {
 	}
 }
 
+// \not overlays a negation slash on the following atom; \substack stacks its
+// \\-separated lines at script size.
+func TestNotAndSubstack(t *testing.T) {
+	r := newRenderer(t)
+	for _, tex := range []string{
+		`a \not= b`, `A \not\subset B`, `x \not\in S`,
+		`\substack{i<n \\ i \ne j}`, `\sum_{\substack{a \\ b \\ c}} x`,
+	} {
+		t.Run(tex, func(t *testing.T) { renderOK(t, r, tex) })
+	}
+	// \not adds ink (the slash) over the atom without changing its advance width.
+	_, plain, _ := r.RenderSVGMetrics(`=`, 40)
+	_, neg, _ := r.RenderSVGMetrics(`\not=`, 40)
+	if pn, nn := strings.Count(mustRender(t, r, `=`), "<path"), strings.Count(mustRender(t, r, `\not=`), "<path"); nn <= pn {
+		t.Errorf("\\not= has %d paths, = has %d — the slash was not drawn", nn, pn)
+	}
+	if neg.Width < plain.Width*0.5 {
+		t.Errorf("\\not= width %.1f collapsed vs = width %.1f", neg.Width, plain.Width)
+	}
+}
+
 func TestStructure(t *testing.T) {
 	r := newRenderer(t)
 	// fraction and radical draw a rule.

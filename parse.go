@@ -103,10 +103,11 @@ func tokenText(t token) string {
 type stopMode uint8
 
 const (
-	stopEnd   stopMode = iota // only end of input
-	stopBrace                 // stop at }
-	stopRight                 // stop at \right
-	stopCell                  // stop at & \\ or \end (matrix cell)
+	stopEnd      stopMode = iota // only end of input
+	stopBrace                    // stop at }
+	stopRight                    // stop at \right
+	stopCell                     // stop at & \\ or \end (matrix cell)
+	stopStackRow                 // stop at \\ or } (a \substack line)
 )
 
 // atStop reports whether toks begins with a terminator for the given mode.
@@ -122,6 +123,8 @@ func atStop(toks []token, stop stopMode) bool {
 		return t.kind == tCtrl && t.text == "right"
 	case stopCell:
 		return t.kind == tAmp || (t.kind == tCtrl && (t.text == `\` || t.text == "end"))
+	case stopStackRow:
+		return t.kind == tRBrace || (t.kind == tCtrl && t.text == `\`)
 	default:
 		return false
 	}
@@ -392,6 +395,40 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 			cls = clsRel
 		}
 		return e.overUnder(base, extra, name != "underset", sty), cls, false, r2, nil
+	case "substack":
+		// \substack{a \\ b \\ c}: script-size lines stacked and centred, used as a
+		// multi-line sub/superscript under a big operator.
+		if len(toks) == 0 || toks[0].kind != tLBrace {
+			return nil, 0, false, nil, fmt.Errorf(`texmath: \substack needs {…}`)
+		}
+		ssty := sty.script(e)
+		rest := toks[1:]
+		var rows [][]*box
+		for {
+			cell, r, err := e.parseList(rest, ssty, stopStackRow)
+			if err != nil {
+				return nil, 0, false, nil, err
+			}
+			rows = append(rows, []*box{cell})
+			rest = r
+			if len(rest) == 0 {
+				return nil, 0, false, nil, fmt.Errorf(`texmath: \substack without closing }`)
+			}
+			if rest[0].kind == tRBrace {
+				rest = rest[1:]
+				break
+			}
+			rest = rest[1:] // consume \\
+		}
+		return e.gridLayout(rows, gridOpts{rowGap: float64(ssty.px) * 0.18}, ssty), clsOrd, false, rest, nil
+	case "not":
+		// \not X overlays a negation slash on the following atom (e.g. \not= ⇒ ≠,
+		// \not\subset ⇒ ⊄), keeping that atom's class.
+		b, cls, _, rest, err := e.parseAtom(toks, sty)
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		return e.negate(b, sty), cls, false, rest, nil
 	}
 	// \big \Big \bigg \Bigg (and the l/r/m variants) size the FOLLOWING delimiter to
 	// a fixed height instead of stretching it to surrounding content.

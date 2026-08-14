@@ -423,6 +423,24 @@ func (e *engine) overUnder(base, extra *box, over bool, sty style) *box {
 	return out
 }
 
+// negate overlays a slash on a box, centred on its ink, for \not.
+func (e *engine) negate(b *box, sty style) *box {
+	out := newBox(b.cls)
+	out.w, out.h, out.d = b.w, b.h, b.d
+	place(out, b, 0, 0)
+	sl := e.mustGlyph('/', sty.px, clsOrd)
+	dx := (b.w - sl.w) / 2
+	dy := (b.d-b.h)/2 - (sl.d-sl.h)/2 // align the slash's mid-height with the atom's
+	place(out, sl, dx, dy)
+	if t := -dy + sl.h; t > out.h {
+		out.h = t
+	}
+	if bt := dy + sl.d; bt > out.d {
+		out.d = bt
+	}
+	return out
+}
+
 // overline / underline draw a rule above / below the content.
 func (e *engine) overline(b *box, sty style) *box {
 	gap := e.mc(opentype.OverbarVerticalGap, sty.px)
