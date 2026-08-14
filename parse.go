@@ -360,6 +360,49 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 			return nil, 0, false, nil, err
 		}
 		return e.modBox('(', ')', "", n, sty), clsOrd, false, rest, nil
+	case "binom", "dbinom", "tbinom", "choose":
+		fsty := sty
+		if name == "dbinom" {
+			fsty.display = true
+		} else if name == "tbinom" {
+			fsty.display = false
+		}
+		num, r1, err := e.parseGroupArg(toks, fsty.inner())
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		den, r2, err := e.parseGroupArg(r1, fsty.inner())
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		return e.delimited(e.binom(num, den, fsty), '(', ')', fsty), clsInner, false, r2, nil
+	case "overset", "underset", "stackrel":
+		// \overset{top}{base} (and \stackrel) put a small box above the base;
+		// \underset{bottom}{base} below it.
+		extra, r1, err := e.parseGroupArg(toks, sty.script(e))
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		base, r2, err := e.parseGroupArg(r1, sty)
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		cls := clsOrd
+		if name == "stackrel" {
+			cls = clsRel
+		}
+		return e.overUnder(base, extra, name != "underset", sty), cls, false, r2, nil
+	}
+	// \big \Big \bigg \Bigg (and the l/r/m variants) size the FOLLOWING delimiter to
+	// a fixed height instead of stretching it to surrounding content.
+	if f, ok := bigDelimFactor(name); ok {
+		d, rest, err := e.readDelim(toks)
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		cls := bigDelimClass(name)
+		b := e.axisCentre(e.stretchVertical(d, f*float64(sty.px), sty.px, cls), sty.px)
+		return b, cls, false, rest, nil
 	}
 	// named operators (\log \sin \lim …): upright name, operator class/spacing.
 	// The limit-taking members set sub/superscripts above/below in display.
@@ -558,6 +601,38 @@ func (e *engine) parseUntilBracket(toks []token, sty style) (*box, []token, erro
 		return nil, nil, fmt.Errorf("texmath: missing ] after [")
 	}
 	return e.hlist(items, sty), toks[1:], nil
+}
+
+// bigDelimFactor reports the fixed delimiter-height multiple (of the em size) for
+// the \big family — \big/\bigl/\bigr/\bigm, \Big…, \bigg…, \Bigg… — and false for
+// any other command name.
+func bigDelimFactor(name string) (float64, bool) {
+	base := strings.TrimRight(name, "lrm")
+	switch base {
+	case "big":
+		return 1.2, true
+	case "Big":
+		return 1.8, true
+	case "bigg":
+		return 2.4, true
+	case "Bigg":
+		return 3.0, true
+	}
+	return 0, false
+}
+
+// bigDelimClass maps a \big-family suffix to its atom class: l→open, r→close,
+// m→relation, none→ordinary.
+func bigDelimClass(name string) atomClass {
+	switch name[len(name)-1] {
+	case 'l':
+		return clsOpen
+	case 'r':
+		return clsClose
+	case 'm':
+		return clsRel
+	}
+	return clsOrd
 }
 
 // readDelim reads a delimiter token for \left / \right (a char like ( [ | ., or

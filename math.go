@@ -376,6 +376,53 @@ func (e *engine) fraction(num, den *box, sty style) *box {
 	return out
 }
 
+// binom stacks num over den with NO rule (the body of \binom, wrapped in
+// parentheses by the caller). It reuses the fraction gaps, widened by the rule
+// thickness that a fraction would occupy, so the two rows sit a little apart.
+func (e *engine) binom(num, den *box, sty style) *box {
+	px := sty.px
+	axis := e.axis(px)
+	rt := e.mc(opentype.FractionRuleThickness, px)
+	gapN := e.mc(opentype.FractionNumeratorGapMin, px) + rt
+	gapD := e.mc(opentype.FractionDenominatorGapMin, px) + rt
+	if sty.display {
+		gapN = e.mc(opentype.FractionNumDisplayStyleGapMin, px) + rt
+		gapD = e.mc(opentype.FractionDenomDisplayStyleGapMin, px) + rt
+	}
+	pad := float64(px) * 0.12
+	w := gomath.Max(num.w, den.w) + 2*pad
+	out := newBox(clsInner)
+	out.w = w
+	numBase := -(axis + gapN + num.d)
+	place(out, num, (w-num.w)/2, numBase)
+	denBase := -axis + gapD + den.h
+	place(out, den, (w-den.w)/2, denBase)
+	out.h = -numBase + num.h
+	out.d = denBase + den.d
+	return out
+}
+
+// overUnder centres a small box above (over) or below (under) a base box, as
+// \overset/\underset/\stackrel do.
+func (e *engine) overUnder(base, extra *box, over bool, sty style) *box {
+	out := newBox(base.cls)
+	out.w = gomath.Max(base.w, extra.w)
+	gap := float64(sty.px) * 0.1
+	place(out, base, (out.w-base.w)/2, 0)
+	if over {
+		ty := -(base.h + gap + extra.d)
+		place(out, extra, (out.w-extra.w)/2, ty)
+		out.h = -ty + extra.h
+		out.d = base.d
+	} else {
+		ty := base.d + gap + extra.h
+		place(out, extra, (out.w-extra.w)/2, ty)
+		out.h = base.h
+		out.d = ty + extra.d
+	}
+	return out
+}
+
 // overline / underline draw a rule above / below the content.
 func (e *engine) overline(b *box, sty style) *box {
 	gap := e.mc(opentype.OverbarVerticalGap, sty.px)

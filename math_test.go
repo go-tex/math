@@ -105,6 +105,29 @@ func TestAddedSymbols(t *testing.T) {
 	}
 }
 
+// \binom, the \big delimiter family, and \overset/\underset/\stackrel render.
+func TestBinomBigOverset(t *testing.T) {
+	r := newRenderer(t)
+	for _, tex := range []string{
+		`\binom{n}{k}`, `\dbinom{n}{2}`, `\tbinom{a}{b}`,
+		`\bigl( x \bigr)`, `\Big[ y \Big]`, `\bigg\{ z \bigg\}`, `\Bigg| w \Bigg|`,
+		`\big| a \big|`, `\bigm| b`,
+		`\overset{a}{b}`, `\underset{c}{d}`, `x \stackrel{f}{=} y`,
+	} {
+		t.Run(tex, func(t *testing.T) { renderOK(t, r, tex) })
+	}
+	// \binom draws no rule (unlike \frac).
+	if strings.Contains(mustRender(t, r, `\binom{n}{k}`), "<rect") {
+		t.Error("\\binom must not draw a fraction rule")
+	}
+	// \bigl( is taller than a plain (.
+	_, big, _ := r.RenderSVGMetrics(`\bigl(`, 40)
+	_, plain, _ := r.RenderSVGMetrics(`(`, 40)
+	if big.Height+big.Depth <= plain.Height+plain.Depth {
+		t.Errorf("\\bigl( (%.1f) should be taller than ( (%.1f)", big.Height+big.Depth, plain.Height+plain.Depth)
+	}
+}
+
 func TestStructure(t *testing.T) {
 	r := newRenderer(t)
 	// fraction and radical draw a rule.
