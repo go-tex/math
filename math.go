@@ -411,10 +411,7 @@ func (e *engine) binom(num, den *box, sty style) *box {
 func (e *engine) xArrow(sup, sub *box, leftHead, rightHead, hooked, mapsto bool, sty style) *box {
 	px := sty.px
 	axisY := -e.axis(px)
-	rt := e.mc(opentype.FractionRuleThickness, px)
-	if rt <= 0 {
-		rt = float64(px) * 0.045
-	}
+	rt := gomath.Max(e.mc(opentype.FractionRuleThickness, px), float64(px)*0.045)
 	headLen := float64(px) * 0.42
 	headHW := float64(px) * 0.24
 	pad := float64(px) * 0.30
@@ -542,10 +539,7 @@ func (e *engine) overUnder(base, extra *box, over bool, sty style) *box {
 // boxed draws a rectangular frame around the content (\boxed).
 func (e *engine) boxed(b *box, sty style) *box {
 	pad := float64(sty.px) * 0.15
-	rt := e.mc(opentype.FractionRuleThickness, sty.px)
-	if rt <= 0 {
-		rt = float64(sty.px) * 0.05
-	}
+	rt := gomath.Max(e.mc(opentype.FractionRuleThickness, sty.px), float64(sty.px)*0.05)
 	out := newBox(clsOrd)
 	out.w = b.w + 2*pad
 	place(out, b, pad, 0)

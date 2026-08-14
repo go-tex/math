@@ -218,6 +218,40 @@ func TestBraketNotation(t *testing.T) {
 	}
 }
 
+// TestCoverageCorners exercises the remaining branches: the default size path,
+// unterminated/stray \ifmmode conditionals, the remaining atom-class wrappers, a
+// bad delimiter of each script/prime kind (tokenText), and error propagation
+// through every new command handler.
+func TestCoverageCorners(t *testing.T) {
+	r := newRenderer(t)
+	// Default size (sizePx <= 0) in both metric entry points.
+	if _, _, err := r.RenderSVGMetrics("x", 0); err != nil {
+		t.Errorf("RenderSVGMetrics size 0: %v", err)
+	}
+	if _, _, err := r.RenderDisplaySVGMetrics("x", 0); err != nil {
+		t.Errorf("RenderDisplaySVGMetrics size 0: %v", err)
+	}
+	// Conditionals with no \else / no \fi, and stray \else / \fi.
+	for _, ok := range []string{`\ifmmode a+b`, `x\fi`, `y\else z`, `\mathpunct{,}x`, `\mathinner{x}`, `\mathop{X}`} {
+		if _, _, err := r.RenderSVGMetrics(ok, 40); err != nil {
+			t.Errorf("render(%q): %v", ok, err)
+		}
+	}
+	// Bad delimiter of each kind reaches tokenText's ^ / _ / ' cases.
+	for _, bad := range []string{
+		`\left^ a \right)`, `\left_ a \right)`, `\left' a \right)`,
+		`\binom{\zz}{k}`, `\binom{a}{\zz}`, `\overset{\zz}{x}`, `\overset{a}{\zz}`,
+		`\underset{\zz}{x}`, `\substack{\zz}`, `\substack x`, `\substack{a`,
+		`\not\zz`, `\ket{\zz}`, `\ketbra{\zz}{y}`, `\ketbra{x}{\zz}`,
+		`\boxed{\zz}`, `\underbrace{\zz}`, `\phantom{\zz}`, `\bigl\zz`, `\xrightarrow{\zz}`, `\xrightarrow[\zz]{x}`,
+		`\ensuremath{\zz}`, `\mathbin{\zz}`, `\mathscr{\zz}`,
+	} {
+		if _, _, err := r.RenderSVGMetrics(bad, 40); err == nil {
+			t.Errorf("render(%q): expected an error", bad)
+		}
+	}
+}
+
 func TestStructure(t *testing.T) {
 	r := newRenderer(t)
 	// fraction and radical draw a rule.
