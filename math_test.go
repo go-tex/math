@@ -149,6 +149,30 @@ func TestNotAndSubstack(t *testing.T) {
 	}
 }
 
+// \ifmmode is always true in this always-math renderer: its true branch is kept
+// and the \else branch dropped. Dual text/math macros (\ensuremath) reach the math
+// source this way; before, the unknown \ifmmode dropped the whole equation.
+func TestIfmmodeResolves(t *testing.T) {
+	r := newRenderer(t)
+	// True branch is taken: the \else branch's undefined command is never seen, so
+	// this renders instead of erroring.
+	if _, _, err := r.RenderSVGMetrics(`\ifmmode a+b\else\nosuchcommand\fi`, 40); err != nil {
+		t.Fatalf("true branch not taken (saw the \\else branch): %v", err)
+	}
+	// Nesting and a leading construct around the conditional both work.
+	for _, tex := range []string{
+		`x = \ifmmode\mathbb{R}\else R\fi`,
+		`\sum_{\ifmmode i=1\else i\fi}^{n} a_i`,
+		`\ifmmode\ifmmode y\fi\else z\fi`,
+	} {
+		t.Run(tex, func(t *testing.T) { renderOK(t, r, tex) })
+	}
+	// A missing branch: an \else branch that is the whole tail is dropped.
+	if _, _, err := r.RenderSVGMetrics(`k\ifmmode+1\fi`, 40); err != nil {
+		t.Fatalf("\\ifmmode…\\fi (no else) failed: %v", err)
+	}
+}
+
 func TestStructure(t *testing.T) {
 	r := newRenderer(t)
 	// fraction and radical draw a rule.

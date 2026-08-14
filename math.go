@@ -85,7 +85,7 @@ func (r *Renderer) renderM(tex string, sizePx int, display bool) (string, Metric
 		sizePx = 40
 	}
 	e := &engine{font: r.font, upem: float64(r.font.UnitsPerEm())}
-	b, _, err := e.parseList(tokenize(tex), style{px: sizePx, display: display, spacious: true}, stopEnd)
+	b, _, err := e.parseList(resolveConditionals(tokenize(tex)), style{px: sizePx, display: display, spacious: true}, stopEnd)
 	if err != nil {
 		return "", Metrics{}, err
 	}
@@ -97,7 +97,7 @@ func (r *Renderer) render(tex string, sizePx int, display bool) (string, error) 
 		sizePx = 40
 	}
 	e := &engine{font: r.font, upem: float64(r.font.UnitsPerEm())}
-	b, _, err := e.parseList(tokenize(tex), style{px: sizePx, display: display, spacious: true}, stopEnd)
+	b, _, err := e.parseList(resolveConditionals(tokenize(tex)), style{px: sizePx, display: display, spacious: true}, stopEnd)
 	if err != nil {
 		return "", err
 	}

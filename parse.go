@@ -79,6 +79,66 @@ func isLetter(r rune) bool {
 	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
 }
 
+// resolveConditionals evaluates \ifmmode at the token level. This renderer is
+// always in math mode, so \ifmmode is always true: keep the true branch, drop the
+// \else branch, and remove the \ifmmode/\else/\fi markers (handling nesting). A
+// stray \else/\fi is dropped. Dual text/math macros reach the math source through
+// the engine's macro resolver — e.g. \ensuremath's \ifmmode#1\else$#1$\fi — and
+// without this go-tex/math would fail on the unknown \ifmmode and drop the whole
+// equation.
+func resolveConditionals(toks []token) []token {
+	out := make([]token, 0, len(toks))
+	for i := 0; i < len(toks); {
+		t := toks[i]
+		if t.kind == tCtrl && t.text == "ifmmode" {
+			depth, elseAt, fiAt := 0, -1, -1
+			for j := i + 1; j < len(toks); j++ {
+				if toks[j].kind != tCtrl {
+					continue
+				}
+				switch toks[j].text {
+				case "ifmmode":
+					depth++
+				case "else":
+					if depth == 0 && elseAt == -1 {
+						elseAt = j
+					}
+				case "fi":
+					if depth > 0 {
+						depth--
+					} else {
+						fiAt = j
+					}
+				}
+				if fiAt != -1 {
+					break
+				}
+			}
+			trueEnd := fiAt
+			if elseAt != -1 {
+				trueEnd = elseAt
+			}
+			if trueEnd < 0 {
+				trueEnd = len(toks) // unterminated: take the rest as the true branch
+			}
+			out = append(out, resolveConditionals(toks[i+1:trueEnd])...)
+			if fiAt >= 0 {
+				i = fiAt + 1
+			} else {
+				i = len(toks)
+			}
+			continue
+		}
+		if t.kind == tCtrl && (t.text == "else" || t.text == "fi") {
+			i++ // stray conditional marker
+			continue
+		}
+		out = append(out, t)
+		i++
+	}
+	return out
+}
+
 func tokenText(t token) string {
 	switch t.kind {
 	case tCtrl:
