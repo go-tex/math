@@ -351,6 +351,27 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 			return nil, 0, false, nil, err
 		}
 		return e.radical(body, index, sty), clsOrd, false, r, nil
+	case "xrightarrow", "xleftarrow", "xleftrightarrow", "xRightarrow", "xLeftarrow",
+		"xLeftrightarrow", "xhookrightarrow", "xhookleftarrow", "xmapsto",
+		"xrightharpoonup", "xrightharpoondown", "xleftharpoonup", "xleftharpoondown":
+		// Extensible arrow \xxx[under]{over}: a shaft stretched to the labels, the
+		// required {over} above and the optional [under] below, both at script size.
+		leftHead, rightHead, hooked, mapsto, _ := xArrowSpec(name)
+		ssty := sty.script(e)
+		var sub *box
+		rest := toks
+		if len(rest) > 0 && rest[0].kind == tChar && rest[0].r == '[' {
+			ub, r, err := e.parseUntilBracket(rest[1:], ssty)
+			if err != nil {
+				return nil, 0, false, nil, err
+			}
+			sub, rest = ub, r
+		}
+		sup, r, err := e.parseGroupArg(rest, ssty)
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		return e.xArrow(sup, sub, leftHead, rightHead, hooked, mapsto, ssty), clsRel, false, r, nil
 	case "left":
 		open, rest, err := e.readDelim(toks)
 		if err != nil {

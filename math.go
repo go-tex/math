@@ -402,6 +402,122 @@ func (e *engine) binom(num, den *box, sty style) *box {
 	return out
 }
 
+// xArrow builds an extensible horizontal arrow (\xrightarrow, \xleftarrow,
+// \xleftrightarrow, \xhookrightarrow, \xhookleftarrow, \xmapsto) stretched to the
+// width of its labels: the required superscript label sits above the shaft and
+// the optional subscript label below it, both at script size. leftHead/rightHead
+// select the arrowheads, hooked adds a small tail hook and mapsto a tail bar. The
+// arrow is centred on the math axis and carries relation class. sup/sub may be nil.
+func (e *engine) xArrow(sup, sub *box, leftHead, rightHead, hooked, mapsto bool, sty style) *box {
+	px := sty.px
+	axisY := -e.axis(px)
+	rt := e.mc(opentype.FractionRuleThickness, px)
+	if rt <= 0 {
+		rt = float64(px) * 0.045
+	}
+	headLen := float64(px) * 0.42
+	headHW := float64(px) * 0.24
+	pad := float64(px) * 0.30
+	minLen := float64(px) * 1.4
+
+	labelW := 0.0
+	if sup != nil && sup.w > labelW {
+		labelW = sup.w
+	}
+	if sub != nil && sub.w > labelW {
+		labelW = sub.w
+	}
+	W := labelW + 2*pad
+	if W < minLen {
+		W = minLen
+	}
+
+	out := newBox(clsRel)
+	out.w = W
+
+	// Shaft, trimmed at whichever ends carry an arrowhead.
+	x0, x1 := 0.0, W
+	if leftHead || mapsto {
+		x0 = headLen
+	}
+	if rightHead {
+		x1 = W - headLen
+	}
+	rule(out, x0, axisY-rt/2, x1-x0, rt)
+
+	head := func(tipX, backX float64) {
+		fmt.Fprintf(&out.svg, `<path d="M%s %s L%s %s L%s %s Z"/>`,
+			ftoa(tipX), ftoa(axisY),
+			ftoa(backX), ftoa(axisY-headHW),
+			ftoa(backX), ftoa(axisY+headHW))
+	}
+	if rightHead {
+		head(W, W-headLen)
+	}
+	if leftHead {
+		head(0, headLen)
+	}
+	if mapsto {
+		// \xmapsto: a vertical tail bar at the left end.
+		rule(out, 0, axisY-headHW, rt, 2*headHW)
+	}
+	if hooked {
+		// A small quarter-circle hook at the tail (the end without the head).
+		hr := headHW * 0.85
+		if rightHead {
+			fmt.Fprintf(&out.svg, `<path d="M%s %s a%s %s 0 0 0 %s %s" fill="none" stroke="currentColor" stroke-width="%s"/>`,
+				ftoa(headLen), ftoa(axisY), ftoa(hr), ftoa(hr), ftoa(0), ftoa(2*hr), ftoa(rt))
+		} else {
+			fmt.Fprintf(&out.svg, `<path d="M%s %s a%s %s 0 0 1 %s %s" fill="none" stroke="currentColor" stroke-width="%s"/>`,
+				ftoa(W-headLen), ftoa(axisY), ftoa(hr), ftoa(hr), ftoa(0), ftoa(2*hr), ftoa(rt))
+		}
+	}
+
+	arrowTopY := axisY - headHW
+	arrowBotY := axisY + headHW
+	out.h = -arrowTopY
+	out.d = arrowBotY
+	gap := float64(px) * 0.12
+	if sup != nil {
+		by := arrowTopY - gap - sup.d
+		place(out, sup, (W-sup.w)/2, by)
+		if t := -by + sup.h; t > out.h {
+			out.h = t
+		}
+	}
+	if sub != nil {
+		by := arrowBotY + gap + sub.h
+		place(out, sub, (W-sub.w)/2, by)
+		if bt := by + sub.d; bt > out.d {
+			out.d = bt
+		}
+	}
+	if out.d < 0 {
+		out.d = 0
+	}
+	return out
+}
+
+// xArrowSpec reports, for an extensible-arrow command name, whether it is one and
+// the arrowhead/decoration configuration to pass to xArrow.
+func xArrowSpec(name string) (leftHead, rightHead, hooked, mapsto, ok bool) {
+	switch name {
+	case "xrightarrow", "xRightarrow", "xrightharpoonup", "xrightharpoondown":
+		return false, true, false, false, true
+	case "xleftarrow", "xLeftarrow", "xleftharpoonup", "xleftharpoondown":
+		return true, false, false, false, true
+	case "xleftrightarrow", "xLeftrightarrow":
+		return true, true, false, false, true
+	case "xhookrightarrow":
+		return false, true, true, false, true
+	case "xhookleftarrow":
+		return true, false, true, false, true
+	case "xmapsto":
+		return false, true, false, true, true
+	}
+	return false, false, false, false, false
+}
+
 // overUnder centres a small box above (over) or below (under) a base box, as
 // \overset/\underset/\stackrel do.
 func (e *engine) overUnder(base, extra *box, over bool, sty style) *box {
