@@ -401,7 +401,7 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 			return nil, 0, false, nil, err
 		}
 		return e.underline(b, sty), clsOrd, false, r, nil
-	case "text", "textrm", "textnormal", "mbox", "hbox", "mathrm", "mathbf", "mathbb", "mathcal", "mathscr", "EuScript", "mathfrak", "mathsf", "mathtt", "mathit", "boldsymbol":
+	case "text", "textrm", "textnormal", "mbox", "hbox", "mathrm", "mathbf", "mathbb", "mathds", "mathcal", "mathscr", "EuScript", "mathfrak", "mathsf", "mathtt", "mathit", "boldsymbol":
 		asty := sty
 		asty.alpha = alphabetFor(name)
 		b, r, err := e.parseGroupArg(toks, asty)
@@ -1021,7 +1021,8 @@ func alphabetFor(name string) func(rune) rune {
 		return blockMapper(0x1D5A0, 0x1D5BA, 0x1D7E2, nil)
 	case "mathtt":
 		return blockMapper(0x1D670, 0x1D68A, 0x1D7F6, nil)
-	case "mathbb":
+	case "mathbb", "mathds":
+		// \mathds (dsfont) is double-struck — the same blackboard block as \mathbb.
 		return blockMapper(0x1D538, 0x1D552, 0x1D7D8, bbHoles)
 	case "mathcal":
 		return blockMapper(0x1D49C, 0x1D4B6, 0, calHoles)
@@ -1256,4 +1257,8 @@ var symbols = map[string]sym{
 	"circledast": {'⊛', clsBin}, "circledcirc": {'⊚', clsBin},
 	// control symbols
 	"{": {'{', clsOpen}, "}": {'}', clsClose},
+	// escaped specials: \% \# \& \_ \$ render the literal glyph (common in real
+	// papers — a percent, a literal underscore, an ampersand, a dollar in math).
+	"%": {'%', clsOrd}, "#": {'#', clsOrd}, "&": {'&', clsOrd},
+	"_": {'_', clsOrd}, "$": {'$', clsOrd},
 }

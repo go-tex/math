@@ -100,6 +100,20 @@ func TestAddedSymbols(t *testing.T) {
 		`f \colon A \to B`, `x \coloneqq y`, `a \eqqcolon b`,
 		`p \nmid q`, `A \subsetneq B`, `x \leqslant y \geqslant z`,
 		`u \lesssim v \gtrsim w`, `\Diamond \square \blacksquare`,
+		// escaped specials rendered as literal glyphs (arXiv census)
+		`50\%`, `a\#b`, `x\_y`, `p\&q`, `\$5`,
+	} {
+		t.Run(tex, func(t *testing.T) { renderOK(t, r, tex) })
+	}
+}
+
+// \mathds (dsfont) is the double-struck alphabet — the same blackboard block as
+// \mathbb, including digits (\mathds{1} = the indicator 𝟙), the top math gap in the
+// arXiv real-world sweep.
+func TestMathdsAlphabet(t *testing.T) {
+	r := newRenderer(t)
+	for _, tex := range []string{
+		`\mathds{R}`, `\mathds{1}`, `\mathds{Z}_{\geq 0}`, `\mathbb{1}`, `\mathbb{0}`,
 	} {
 		t.Run(tex, func(t *testing.T) { renderOK(t, r, tex) })
 	}
