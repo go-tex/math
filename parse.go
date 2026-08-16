@@ -218,6 +218,25 @@ func (e *engine) parseList(toks []token, sty style, stop stopMode) (*box, []toke
 				// math italic.
 				sty.alpha, toks = fontSwitch[toks[0].text], toks[1:]
 				continue
+			case "over", "atop", "choose":
+				// Plain-TeX infix fraction operators: everything already parsed in this
+				// group is the numerator, everything after (to the group's end) the
+				// denominator. \over has a rule, \atop none, \choose is \atop in parens.
+				num := e.hlist(items, sty)
+				den, rest, err := e.parseList(toks[1:], sty, stop)
+				if err != nil {
+					return nil, nil, err
+				}
+				var b *box
+				switch toks[0].text {
+				case "over":
+					b = e.fraction(num, den, sty)
+				case "atop":
+					b = e.binom(num, den, sty)
+				default: // choose
+					b = e.delimited(e.binom(num, den, sty), '(', ')', sty)
+				}
+				return b, rest, nil
 			}
 		}
 		if atStop(toks, stop) {
@@ -1274,4 +1293,8 @@ var symbols = map[string]sym{
 	"_": {'_', clsOrd}, "$": {'$', clsOrd},
 	// mathtools relation-punctuation seen in the corpus
 	"vcentcolon": {'∶', clsRel}, "dblcolon": {'∷', clsRel},
+	// dotless letters and angle ordinaries (amssymb) seen in the corpus
+	"imath": {'ı', clsOrd}, "jmath": {'ȷ', clsOrd},
+	"measuredangle": {'∡', clsOrd}, "sphericalangle": {'∢', clsOrd},
+	"backprime": {'‵', clsOrd}, "varnothing": {'∅', clsOrd},
 }

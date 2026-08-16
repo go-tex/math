@@ -103,6 +103,9 @@ func TestAddedSymbols(t *testing.T) {
 		// escaped specials rendered as literal glyphs (arXiv census)
 		`50\%`, `a\#b`, `x\_y`, `p\&q`, `\$5`,
 		`a \vcentcolon= b`, `x \dblcolon y`,
+		`\imath + \jmath`, `\measuredangle ABC`, `\varnothing \sphericalangle`,
+		// plain-TeX infix fractions
+		`{a \over b}`, `x={n+1 \over 2}+y`, `{a \atop b}`, `{n \choose k}`,
 	} {
 		t.Run(tex, func(t *testing.T) { renderOK(t, r, tex) })
 	}
