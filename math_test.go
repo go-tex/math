@@ -123,6 +123,14 @@ func TestMathdsAlphabet(t *testing.T) {
 	}
 }
 
+// A plain-TeX infix fraction whose denominator fails to parse propagates the error.
+func TestInfixFractionDenominatorError(t *testing.T) {
+	r := newRenderer(t)
+	if _, _, err := r.RenderSVGMetrics(`{a \over \sqrt}`, 11); err == nil {
+		t.Error(`a broken \over denominator should error`)
+	}
+}
+
 // \middle renders a mid-fence delimiter inside \left…\right (set-builder "such
 // that", conditional probability), instead of dropping the whole expression.
 func TestMiddle(t *testing.T) {

@@ -1296,5 +1296,4 @@ var symbols = map[string]sym{
 	// dotless letters and angle ordinaries (amssymb) seen in the corpus
 	"imath": {'ı', clsOrd}, "jmath": {'ȷ', clsOrd},
 	"measuredangle": {'∡', clsOrd}, "sphericalangle": {'∢', clsOrd},
-	"backprime": {'‵', clsOrd}, "varnothing": {'∅', clsOrd},
 }
