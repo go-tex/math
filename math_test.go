@@ -102,6 +102,7 @@ func TestAddedSymbols(t *testing.T) {
 		`u \lesssim v \gtrsim w`, `\Diamond \square \blacksquare`,
 		// escaped specials rendered as literal glyphs (arXiv census)
 		`50\%`, `a\#b`, `x\_y`, `p\&q`, `\$5`,
+		`a \vcentcolon= b`, `x \dblcolon y`,
 	} {
 		t.Run(tex, func(t *testing.T) { renderOK(t, r, tex) })
 	}

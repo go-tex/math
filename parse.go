@@ -1272,4 +1272,6 @@ var symbols = map[string]sym{
 	// papers — a percent, a literal underscore, an ampersand, a dollar in math).
 	"%": {'%', clsOrd}, "#": {'#', clsOrd}, "&": {'&', clsOrd},
 	"_": {'_', clsOrd}, "$": {'$', clsOrd},
+	// mathtools relation-punctuation seen in the corpus
+	"vcentcolon": {'∶', clsRel}, "dblcolon": {'∷', clsRel},
 }
