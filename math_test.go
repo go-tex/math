@@ -119,6 +119,23 @@ func TestMathdsAlphabet(t *testing.T) {
 	}
 }
 
+// \middle renders a mid-fence delimiter inside \left…\right (set-builder "such
+// that", conditional probability), instead of dropping the whole expression.
+func TestMiddle(t *testing.T) {
+	r := newRenderer(t)
+	for _, tex := range []string{
+		`\left\{ x \middle| P(x) \right\}`,
+		`\left( a \middle/ b \right)`,
+		`\left. \frac{a}{b} \middle| c \right.`,
+	} {
+		t.Run(tex, func(t *testing.T) { renderOK(t, r, tex) })
+	}
+	// A \middle with no valid delimiter is an error, not a panic.
+	if _, _, err := r.RenderSVGMetrics(`\left(x\middle\right)`, 11); err == nil {
+		t.Error(`\middle without a delimiter should error`)
+	}
+}
+
 // \binom, the \big delimiter family, and \overset/\underset/\stackrel render.
 func TestBinomBigOverset(t *testing.T) {
 	r := newRenderer(t)

@@ -389,6 +389,17 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 			return nil, 0, false, nil, err
 		}
 		return e.delimited(inner, open, close, sty), clsInner, false, r2, nil
+	case "middle":
+		// \middle<delim> inside \left…\right renders a delimiter sized to the fence.
+		// Exact fence-matching would need the surrounding height (a second pass); a
+		// fixed \Big-scale stretch keeps the equation rendering instead of dropping
+		// the whole \left…\middle…\right expression (a common set-builder failure).
+		d, rest, err := e.readDelim(toks)
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		b := e.axisCentre(e.stretchVertical(d, 1.8*float64(sty.px), sty.px, clsRel), sty.px)
+		return b, clsRel, false, rest, nil
 	case "overline":
 		b, r, err := e.parseGroupArg(toks, sty)
 		if err != nil {
