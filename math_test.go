@@ -123,6 +123,22 @@ func TestMathdsAlphabet(t *testing.T) {
 	}
 }
 
+// Symbols and double-struck alphabets found by the arXiv corpus census that used
+// to drop the whole equation: \mathbbm{1} (1045 papers, bbm indicator), \intercal
+// (225), \dotplus, \Coloneqq (mathtools) and the \mathbbmss/\mathbbb double-struck
+// variants. Each must now resolve to a glyph and render instead of being refused.
+func TestCorpusCensusSymbols(t *testing.T) {
+	r := newRenderer(t)
+	for _, tex := range []string{
+		`x^\intercal`, `A^\intercal B`, `a \dotplus b`,
+		`a \Coloneqq b`, `a \Coloneq b`,
+		`\mathbbm{1}`, `\mathbbm{R}`, `\mathbbm{1}_{\{x>0\}}`,
+		`\mathbbmss{X}`, `\mathbbb{Z}`,
+	} {
+		t.Run(tex, func(t *testing.T) { renderOK(t, r, tex) })
+	}
+}
+
 // A plain-TeX infix fraction whose denominator fails to parse propagates the error.
 func TestInfixFractionDenominatorError(t *testing.T) {
 	r := newRenderer(t)
@@ -490,6 +506,10 @@ func TestAlphabets(t *testing.T) {
 		{"mathbf", 'a', 0x1D41A}, {"mathsf", 'A', 0x1D5A0}, {"mathtt", 'a', 0x1D68A},
 		{"mathit", 'h', 0x210E}, {"text", 'x', 'x'}, {"mathrm", 'y', 'y'},
 		{"boldsymbol", 'a', 0x1D482}, {"mathbf", '5', 0x1D7D3}, {"mathbf", '+', '+'},
+		// \mathbbm / \mathbbmss / \mathbbb approximate the blackboard block, so the
+		// bbm indicator \mathbbm{1} maps to 𝟙 exactly like \mathbb{1}/\mathds{1}.
+		{"mathbbm", '1', 0x1D7D9}, {"mathbbm", 'R', 0x211D}, {"mathbbm", 'A', 0x1D538},
+		{"mathbbmss", '1', 0x1D7D9}, {"mathbbb", 'Z', 0x2124},
 	}
 	for _, c := range cases {
 		if got := alphabetFor(c.name)(c.in); got != c.want {
