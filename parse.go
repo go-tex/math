@@ -431,7 +431,7 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 			return nil, 0, false, nil, err
 		}
 		return e.underline(b, sty), clsOrd, false, r, nil
-	case "text", "textrm", "textnormal", "mbox", "hbox", "mathrm", "mathbf", "mathbb", "mathds", "mathcal", "mathscr", "EuScript", "mathfrak", "mathsf", "mathtt", "mathit", "boldsymbol":
+	case "text", "textrm", "textnormal", "mbox", "hbox", "mathrm", "mathbf", "mathbb", "mathds", "mathbbm", "mathbbmss", "mathbbb", "mathcal", "mathscr", "EuScript", "mathfrak", "mathsf", "mathtt", "mathit", "boldsymbol":
 		asty := sty
 		asty.alpha = alphabetFor(name)
 		b, r, err := e.parseGroupArg(toks, asty)
@@ -1051,8 +1051,11 @@ func alphabetFor(name string) func(rune) rune {
 		return blockMapper(0x1D5A0, 0x1D5BA, 0x1D7E2, nil)
 	case "mathtt":
 		return blockMapper(0x1D670, 0x1D68A, 0x1D7F6, nil)
-	case "mathbb", "mathds":
-		// \mathds (dsfont) is double-struck — the same blackboard block as \mathbb.
+	case "mathbb", "mathds", "mathbbm", "mathbbmss", "mathbbb":
+		// \mathds (dsfont), \mathbbm (bbm), \mathbbmss (bbm sans) and \mathbbb (bbold)
+		// are all double-struck fonts — we approximate every one with the same Unicode
+		// blackboard block as \mathbb. This makes the ubiquitous \mathbbm{1} indicator
+		// (𝟙) render instead of dropping the whole equation.
 		return blockMapper(0x1D538, 0x1D552, 0x1D7D8, bbHoles)
 	case "mathcal":
 		return blockMapper(0x1D49C, 0x1D4B6, 0, calHoles)
@@ -1209,6 +1212,7 @@ var symbols = map[string]sym{
 	"uplus": {'⊎', clsBin}, "sqcup": {'⊔', clsBin}, "sqcap": {'⊓', clsBin}, "vee": {'∨', clsBin},
 	"wedge": {'∧', clsBin}, "setminus": {'∖', clsBin}, "wr": {'≀', clsBin}, "diamond": {'⋄', clsBin},
 	"bigtriangleup": {'△', clsBin}, "bigtriangledown": {'▽', clsBin},
+	"intercal": {'⊺', clsBin}, "dotplus": {'∔', clsBin},
 	// relations
 	"leq": {'≤', clsRel}, "le": {'≤', clsRel}, "geq": {'≥', clsRel}, "ge": {'≥', clsRel},
 	"neq": {'≠', clsRel}, "ne": {'≠', clsRel}, "equiv": {'≡', clsRel}, "approx": {'≈', clsRel},
@@ -1221,6 +1225,7 @@ var symbols = map[string]sym{
 	"dashv": {'⊣', clsRel}, "perp": {'⊥', clsRel}, "mid": {'∣', clsRel}, "parallel": {'∥', clsRel},
 	"doteqdot": {'≑', clsRel}, "bowtie": {'⋈', clsRel},
 	// more relations (amssymb / stmaryrd / mathtools), from the corpus census
+	"Coloneqq": {'⩴', clsRel}, "Coloneq": {'⩴', clsRel},
 	"vDash": {'⊨', clsRel}, "Vdash": {'⊩', clsRel}, "Vvdash": {'⊪', clsRel}, "nsim": {'≁', clsRel},
 	"sqsubset": {'⊏', clsRel}, "sqsupset": {'⊐', clsRel},
 	"vartriangleleft": {'⊲', clsRel}, "vartriangleright": {'⊳', clsRel},
