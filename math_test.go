@@ -104,6 +104,9 @@ func TestAddedSymbols(t *testing.T) {
 		`50\%`, `a\#b`, `x\_y`, `p\&q`, `\$5`,
 		`a \vcentcolon= b`, `x \dblcolon y`,
 		`\imath + \jmath`, `\measuredangle ABC`, `\varnothing \sphericalangle`,
+		// AMS (amssymb) lowercase-greek variants — a missing \varkappa dropped
+		// whole equations across the arXiv corpus (2606.18084: 12 occurrences).
+		`\varkappa`, `\kappa \ne \varkappa`, `\digamma`, `\varkappa_{ij} + \digamma`,
 		// plain-TeX infix fractions
 		`{a \over b}`, `x={n+1 \over 2}+y`, `{a \atop b}`, `{n \choose k}`,
 	} {
