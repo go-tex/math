@@ -474,6 +474,33 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 	case "limits", "nolimits", "displaylimits":
 		// script-placement modifiers on the preceding operator — transparent here.
 		return newBox(clsOrd), clsOrd, false, toks, nil
+	case "normalfont", "rmfamily", "sffamily", "ttfamily", "bfseries", "mdseries",
+		"itshape", "slshape", "scshape", "upshape", "em", "normalcolor",
+		"normalsize", "small", "footnotesize", "scriptsize", "tiny",
+		"large", "Large", "LARGE", "huge", "Huge",
+		"par", "relax", "protect", "leavevmode", "noindent", "ignorespaces":
+		// Text-mode font/size/mode switches and paragraph no-ops that reach the math
+		// layer through macro expansion. They carry no glyph and take no argument, so
+		// they must be transparent — an unrecognised one used to drop the whole
+		// equation (arXiv census: \normalfont 127, \par 55 dropped groups).
+		return newBox(clsOrd), clsOrd, false, toks, nil
+	case "smash", "smashoperator":
+		// \smash[t|b]{x} typesets x with its height and/or depth suppressed. The
+		// vertical trim is not modelled here, but the CONTENT must render rather than
+		// be dropped (census: \smash 32). Skip an optional [t]/[b], keep the body.
+		rest := toks
+		if len(rest) > 0 && rest[0].kind == tChar && rest[0].r == '[' {
+			_, r, err := e.parseUntilBracket(rest[1:], sty)
+			if err != nil {
+				return nil, 0, false, nil, err
+			}
+			rest = r
+		}
+		b, r, err := e.parseGroupArg(rest, sty)
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		return b, clsOrd, false, r, nil
 	case "ket", "bra", "braket", "norm", "abs", "Set", "set", "abs*", "norm*":
 		// braket / physics notation (used via package, so unresolved by the engine's
 		// macro pass): wrap the argument in the standard delimiters.
@@ -1259,7 +1286,8 @@ var symbols = map[string]sym{
 	"infty": {'∞', clsOrd}, "partial": {'∂', clsOrd}, "nabla": {'∇', clsOrd}, "forall": {'∀', clsOrd},
 	"exists": {'∃', clsOrd}, "nexists": {'∄', clsOrd}, "emptyset": {'∅', clsOrd}, "varnothing": {'∅', clsOrd},
 	"neg": {'¬', clsOrd}, "lnot": {'¬', clsOrd}, "top": {'⊤', clsOrd}, "bot": {'⊥', clsOrd},
-	"aleph": {'ℵ', clsOrd}, "hbar": {'ℏ', clsOrd}, "ell": {'ℓ', clsOrd}, "wp": {'℘', clsOrd},
+	"aleph": {'ℵ', clsOrd}, "beth": {'ℶ', clsOrd}, "gimel": {'ℷ', clsOrd}, "daleth": {'ℸ', clsOrd}, // AMS Hebrew
+	"hbar": {'ℏ', clsOrd}, "ell": {'ℓ', clsOrd}, "wp": {'℘', clsOrd},
 	"Re": {'ℜ', clsOrd}, "Im": {'ℑ', clsOrd}, "angle": {'∠', clsOrd}, "triangle": {'△', clsOrd},
 	"backslash": {'\\', clsOrd}, "prime": {'′', clsOrd}, "surd": {'√', clsOrd},
 	"clubsuit": {'♣', clsOrd}, "diamondsuit": {'♢', clsOrd}, "heartsuit": {'♡', clsOrd}, "spadesuit": {'♠', clsOrd},

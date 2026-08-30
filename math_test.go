@@ -107,6 +107,13 @@ func TestAddedSymbols(t *testing.T) {
 		// AMS (amssymb) lowercase-greek variants — a missing \varkappa dropped
 		// whole equations across the arXiv corpus (2606.18084: 12 occurrences).
 		`\varkappa`, `\kappa \ne \varkappa`, `\digamma`, `\varkappa_{ij} + \digamma`,
+		// AMS Hebrew (census: \daleth in 26 dropped groups)
+		`\aleph \beth \gimel \daleth`,
+		// text-mode font/size/mode switches and \par reach the math layer via macro
+		// expansion; they must be transparent, not drop the equation (census:
+		// \normalfont 127, \par 55, \smash 32).
+		`\normalfont x = y`, `{\bfseries a} + b`, `\small z^2`, `a \par b`,
+		`\smash{\frac{1}{2}}`, `\smash[t]{x^2} + 1`, `\relax A \ignorespaces B`,
 		// plain-TeX infix fractions
 		`{a \over b}`, `x={n+1 \over 2}+y`, `{a \atop b}`, `{n \choose k}`,
 	} {
@@ -139,6 +146,18 @@ func TestCorpusCensusSymbols(t *testing.T) {
 		`\mathbbmss{X}`, `\mathbbb{Z}`,
 	} {
 		t.Run(tex, func(t *testing.T) { renderOK(t, r, tex) })
+	}
+}
+
+// \smash renders its body but must still propagate a parse error from either the
+// optional [t|b] bracket or the required {body}, rather than swallow it.
+func TestSmashErrors(t *testing.T) {
+	r := newRenderer(t)
+	if _, _, err := r.RenderSVGMetrics(`\smash[t`, 11); err == nil {
+		t.Error(`\smash with an unterminated [ should error`)
+	}
+	if _, _, err := r.RenderSVGMetrics(`\smash{a \over \sqrt}`, 11); err == nil {
+		t.Error(`\smash with a broken body should error`)
 	}
 }
 
