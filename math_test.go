@@ -161,6 +161,22 @@ func TestSmashErrors(t *testing.T) {
 	}
 }
 
+// Stretchy arrow accents (vector notation) render an arrow spanning the nucleus:
+// \overrightarrow (right head), \overleftarrow (left head), \overleftrightarrow
+// (both), and esvect's \vv. A broken body still propagates the error.
+func TestOverArrow(t *testing.T) {
+	r := newRenderer(t)
+	for _, tex := range []string{
+		`\overrightarrow{AB}`, `\overleftarrow{v}`, `\overleftrightarrow{PQ}`,
+		`\vv{F} = m\vv{a}`, `\overrightarrow{OM} \cdot \overrightarrow{ON}`,
+	} {
+		t.Run(tex, func(t *testing.T) { renderOK(t, r, tex) })
+	}
+	if _, _, err := r.RenderSVGMetrics(`\overrightarrow{a \over \sqrt}`, 11); err == nil {
+		t.Error(`\overrightarrow with a broken body should error`)
+	}
+}
+
 // A plain-TeX infix fraction whose denominator fails to parse propagates the error.
 func TestInfixFractionDenominatorError(t *testing.T) {
 	r := newRenderer(t)
