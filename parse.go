@@ -431,6 +431,15 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 			return nil, 0, false, nil, err
 		}
 		return e.underline(b, sty), clsOrd, false, r, nil
+	case "overrightarrow", "overleftarrow", "overleftrightarrow", "vv":
+		// stretchy arrow accent (vector notation); \vv is esvect's \overrightarrow.
+		b, r, err := e.parseGroupArg(toks, sty)
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		left := name == "overleftarrow" || name == "overleftrightarrow"
+		right := name != "overleftarrow"
+		return e.overArrow(b, left, right, sty), clsOrd, false, r, nil
 	case "text", "textrm", "textnormal", "mbox", "hbox", "mathrm", "mathbf", "mathbb", "mathds", "mathbbm", "mathbbmss", "mathbbb", "mathcal", "mathscr", "EuScript", "mathfrak", "mathsf", "mathtt", "mathit", "boldsymbol":
 		asty := sty
 		asty.alpha = alphabetFor(name)

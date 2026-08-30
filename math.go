@@ -631,6 +631,37 @@ func (e *engine) underline(b *box, sty style) *box {
 	return out
 }
 
+// overArrow stacks a stretchy arrow over the nucleus, spanning its full width —
+// \overrightarrow{AB} (vector), \overleftarrow, \overleftrightarrow. The shaft runs
+// the whole width and each requested end carries a triangular head that overlays it,
+// so the geometry needs no width-dependent guard.
+func (e *engine) overArrow(b *box, left, right bool, sty style) *box {
+	px := sty.px
+	gap := e.mc(opentype.OverbarVerticalGap, px)
+	rt := gomath.Max(e.mc(opentype.OverbarRuleThickness, px), float64(px)*0.045)
+	asc := e.mc(opentype.OverbarExtraAscender, px)
+	headLen := float64(px) * 0.42
+	headHW := float64(px) * 0.24
+	out := newBox(clsOrd)
+	out.w, out.d = b.w, b.d
+	place(out, b, 0, 0)
+	top := b.h + gap
+	y := -(top + headHW) // arrow centreline, clear of the nucleus
+	rule(out, 0, y-rt/2, b.w, rt)
+	head := func(tipX, backX float64) {
+		fmt.Fprintf(&out.svg, `<path d="M%s %s L%s %s L%s %s Z"/>`,
+			ftoa(tipX), ftoa(y), ftoa(backX), ftoa(y-headHW), ftoa(backX), ftoa(y+headHW))
+	}
+	if right {
+		head(b.w, b.w-headLen)
+	}
+	if left {
+		head(0, headLen)
+	}
+	out.h = top + 2*headHW + asc
+	return out
+}
+
 // accent places an accent glyph centred over the nucleus.
 func (e *engine) accent(nuc *box, acc rune, sty style) *box {
 	ab := e.mustGlyph(acc, sty.px, clsOrd)
