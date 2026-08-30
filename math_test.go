@@ -149,6 +149,18 @@ func TestCorpusCensusSymbols(t *testing.T) {
 	}
 }
 
+// \smash renders its body but must still propagate a parse error from either the
+// optional [t|b] bracket or the required {body}, rather than swallow it.
+func TestSmashErrors(t *testing.T) {
+	r := newRenderer(t)
+	if _, _, err := r.RenderSVGMetrics(`\smash[t`, 11); err == nil {
+		t.Error(`\smash with an unterminated [ should error`)
+	}
+	if _, _, err := r.RenderSVGMetrics(`\smash{a \over \sqrt}`, 11); err == nil {
+		t.Error(`\smash with a broken body should error`)
+	}
+}
+
 // A plain-TeX infix fraction whose denominator fails to parse propagates the error.
 func TestInfixFractionDenominatorError(t *testing.T) {
 	r := newRenderer(t)
