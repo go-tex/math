@@ -1190,6 +1190,7 @@ var symbols = map[string]sym{
 	"alpha": {'α', clsOrd}, "beta": {'β', clsOrd}, "gamma": {'γ', clsOrd}, "delta": {'δ', clsOrd},
 	"epsilon": {'ε', clsOrd}, "varepsilon": {'ϵ', clsOrd}, "zeta": {'ζ', clsOrd}, "eta": {'η', clsOrd},
 	"theta": {'θ', clsOrd}, "vartheta": {'ϑ', clsOrd}, "iota": {'ι', clsOrd}, "kappa": {'κ', clsOrd},
+	"varkappa": {'ϰ', clsOrd}, "digamma": {'ϝ', clsOrd}, // AMS (amssymb) lowercase-greek variants
 	"lambda": {'λ', clsOrd}, "mu": {'μ', clsOrd}, "nu": {'ν', clsOrd}, "xi": {'ξ', clsOrd},
 	"pi": {'π', clsOrd}, "varpi": {'ϖ', clsOrd}, "rho": {'ρ', clsOrd}, "varrho": {'ϱ', clsOrd},
 	"sigma": {'σ', clsOrd}, "varsigma": {'ς', clsOrd}, "tau": {'τ', clsOrd}, "upsilon": {'υ', clsOrd},
