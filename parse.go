@@ -59,12 +59,12 @@ func tokenize(s string) []token {
 		case c == '\\':
 			i++
 			start := i
-			if i < len(rs) && !isLetter(rs[i]) { // control symbol like \{ \\ \, \|
+			if i < len(rs) && !isCtrlLetter(rs[i]) { // control symbol like \{ \\ \, \|
 				i++
 				out = append(out, token{kind: tCtrl, text: string(rs[start:i])})
 				continue
 			}
-			for i < len(rs) && isLetter(rs[i]) {
+			for i < len(rs) && isCtrlLetter(rs[i]) {
 				i++
 			}
 			out = append(out, token{kind: tCtrl, text: string(rs[start:i])})
@@ -75,6 +75,18 @@ func tokenize(s string) []token {
 	}
 	return out
 }
+
+// isCtrlLetter reports whether r may appear in a control WORD. TeX reads a control
+// word as a run of category-11 letters, and LaTeX makes @ a letter in package and
+// class code (\makeatletter) — so \the@inst and \@ifundefined are ONE control
+// sequence each, and a caller that resolves macros by name (go-tex/engine) can only
+// find them if they arrive whole. Splitting \the@inst into \the and @inst reported
+// an unknown \the, which no macro table has.
+//
+// A caller writes every control sequence with a trailing space (that is what this
+// package's own source strings do), so a name never bleeds into what follows it:
+// "\\@ x" stays \@ then x.
+func isCtrlLetter(r rune) bool { return isLetter(r) || r == '@' }
 
 func isLetter(r rune) bool {
 	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
@@ -1018,17 +1030,11 @@ func readArgText(toks []token) (string, []token) {
 		return "", nil
 	}
 	if toks[0].kind != tLBrace {
-		// A control word plus the @ that follows it: this parser has no catcodes,
-		// so \z@ — amsmath's own spelling of zero, and what \binom passes
-		// (\genfrac()\z@{}, amsmath.sty:240) — arrives as \z and @.
-		text, rest := tokenText(toks[0]), toks[1:]
-		if toks[0].kind == tCtrl {
-			for len(rest) > 0 && rest[0].kind == tChar && rest[0].r == '@' {
-				text += "@"
-				rest = rest[1:]
-			}
-		}
-		return text, rest
+		// \z@ is one control word here (isCtrlLetter), which is what amsmath's own
+		// spelling of zero has to be: \binom passes it (\genfrac()\z@{},
+		// amsmath.sty:240), and read as \z alone it would draw a rule where the
+		// binomial wants none.
+		return tokenText(toks[0]), toks[1:]
 	}
 	var sb strings.Builder
 	depth := 1
