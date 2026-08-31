@@ -5,6 +5,7 @@ package math
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -564,6 +565,59 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 			return nil, 0, false, nil, err
 		}
 		return e.modBox('(', ')', "", n, sty), clsOrd, false, rest, nil
+	case "genfrac":
+		// \genfrac{left}{right}{thickness}{style}{num}{den} (amsmath.sty:245-250):
+		//
+		//	\edef\@tempb{\@nx\@genfrac\@mathstyle{#4}%
+		//	  \csname @@\ifx @#3@over\else above\fi
+		//	  \ifx\@tempa\@empty \else withdelims\fi\endcsname}
+		//
+		// so an EMPTY thickness means \over — the font's own rule — and any other
+		// means \above that thickness, 0pt being no rule at all. That is how \binom
+		// itself is defined: \genfrac()\z@{} (amsmath.sty:240). The style argument is
+		// TeX's digit — 0 display, 1 text, 2 script, 3 scriptscript — and empty keeps
+		// the style in force.
+		//
+		// A non-zero explicit thickness draws the font's rule rather than that exact
+		// width: the rule is drawn by fraction(), which takes its thickness from the
+		// font's MATH table.
+		left, r1, err := e.readOptionalDelim(toks)
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		right, r2, err := e.readOptionalDelim(r1)
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		thick, r3 := readArgText(r2)
+		mstyle, r4 := readArgText(r3)
+		fsty := sty
+		switch mstyle {
+		case "0":
+			fsty.display = true
+		case "1":
+			fsty.display = false
+		case "2", "3":
+			fsty = fsty.script(e)
+		}
+		num, r5, err := e.parseGroupArg(r4, fsty.inner())
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		den, r6, err := e.parseGroupArg(r5, fsty.inner())
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		var inner *box
+		if isZeroThickness(thick) {
+			inner = e.binom(num, den, fsty)
+		} else {
+			inner = e.fraction(num, den, fsty)
+		}
+		if left != 0 || right != 0 {
+			inner = e.delimited(inner, left, right, fsty)
+		}
+		return inner, clsInner, false, r6, nil
 	case "binom", "dbinom", "tbinom", "choose":
 		fsty := sty
 		if name == "dbinom" {
@@ -933,6 +987,82 @@ func (e *engine) readDelim(toks []token) (rune, []token, error) {
 	return 0, nil, fmt.Errorf("texmath: bad delimiter %q", tokenText(t))
 }
 
+// readOptionalDelim reads a \genfrac delimiter argument: a braced group (possibly
+// empty, {} meaning none), or a single token as TeX takes it when the braces are
+// left off — \genfrac[]{0pt}{}{n}{k} passes [ and ] that way.
+func (e *engine) readOptionalDelim(toks []token) (rune, []token, error) {
+	if len(toks) == 0 {
+		return 0, nil, fmt.Errorf(`texmath: \genfrac needs its six arguments`)
+	}
+	if toks[0].kind != tLBrace {
+		return e.readDelim(toks)
+	}
+	if len(toks) > 1 && toks[1].kind == tRBrace {
+		return 0, toks[2:], nil // {} — no delimiter on this side
+	}
+	r, rest, err := e.readDelim(toks[1:])
+	if err != nil {
+		return 0, nil, err
+	}
+	if len(rest) == 0 || rest[0].kind != tRBrace {
+		return 0, nil, fmt.Errorf(`texmath: \genfrac delimiter is not one token`)
+	}
+	return r, rest[1:], nil
+}
+
+// readArgText reads one argument as plain text — a braced group's characters, or a
+// single token — for the arguments that are a dimension or a digit rather than
+// maths: \genfrac's thickness and style.
+func readArgText(toks []token) (string, []token) {
+	if len(toks) == 0 {
+		return "", nil
+	}
+	if toks[0].kind != tLBrace {
+		// A control word plus the @ that follows it: this parser has no catcodes,
+		// so \z@ — amsmath's own spelling of zero, and what \binom passes
+		// (\genfrac()\z@{}, amsmath.sty:240) — arrives as \z and @.
+		text, rest := tokenText(toks[0]), toks[1:]
+		if toks[0].kind == tCtrl {
+			for len(rest) > 0 && rest[0].kind == tChar && rest[0].r == '@' {
+				text += "@"
+				rest = rest[1:]
+			}
+		}
+		return text, rest
+	}
+	var sb strings.Builder
+	depth := 1
+	for i := 1; i < len(toks); i++ {
+		switch t := toks[i]; t.kind {
+		case tLBrace:
+			depth++
+		case tRBrace:
+			if depth--; depth == 0 {
+				return sb.String(), toks[i+1:]
+			}
+		default:
+			sb.WriteString(tokenText(t))
+		}
+	}
+	return sb.String(), nil
+}
+
+// isZeroThickness reports whether a \genfrac thickness argument asks for NO rule.
+// An empty argument is \over — the font's rule — and every other spelling of zero
+// (0pt, 0, \z@, 0.0pt) is \above 0pt, which draws nothing.
+func isZeroThickness(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return false // empty means "the font's own rule", not "no rule"
+	}
+	if s == `\z@` {
+		return true
+	}
+	num := strings.TrimRight(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ ")
+	v, err := strconv.ParseFloat(strings.TrimSpace(num), 64)
+	return err == nil && v == 0
+}
+
 // kern returns a zero-glyph box of the given width.
 func (e *engine) kern(w float64) *box { b := newBox(clsOrd); b.w = w; return b }
 
@@ -1249,6 +1379,10 @@ var symbols = map[string]sym{
 	"uplus": {'⊎', clsBin}, "sqcup": {'⊔', clsBin}, "sqcap": {'⊓', clsBin}, "vee": {'∨', clsBin},
 	"wedge": {'∧', clsBin}, "setminus": {'∖', clsBin}, "wr": {'≀', clsBin}, "diamond": {'⋄', clsBin},
 	"bigtriangleup": {'△', clsBin}, "bigtriangledown": {'▽', clsBin},
+	// unicode-math-table.tex:694/704 gives both as \mathbin at U+25B7/U+25C1,
+	// as does fontmath.ltx:264-265 (\DeclareMathSymbol …{\mathbin}{letters}).
+	// The ⊲ ⊳ of \vartriangleleft/right below are amssymb's RELATIONS, not these.
+	"triangleleft": {'◁', clsBin}, "triangleright": {'▷', clsBin},
 	"intercal": {'⊺', clsBin}, "dotplus": {'∔', clsBin},
 	// relations
 	"leq": {'≤', clsRel}, "le": {'≤', clsRel}, "geq": {'≥', clsRel}, "ge": {'≥', clsRel},
