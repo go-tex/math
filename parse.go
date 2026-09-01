@@ -696,6 +696,17 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 			return nil, 0, false, nil, err
 		}
 		return e.negate(b, sty), cls, false, rest, nil
+	case "char":
+		// \char<code> — the TeX primitive that typesets the character at a code
+		// point: `<c> or `\<sym> (that character's own code), "<hex>, or a decimal
+		// run. It reaches the math layer mostly through macro expansion (e.g.
+		// \char`\^ for a literal ^); without it the whole formula was dropped, in
+		// 11 of the 200 arXiv reference papers.
+		code, rest, ok := parseCharCode(toks)
+		if !ok {
+			return nil, 0, false, nil, fmt.Errorf(`texmath: \char needs a character code`)
+		}
+		return e.mustGlyph(rune(code), sty.px, clsOrd), clsOrd, false, rest, nil
 	}
 	// \big \Big \bigg \Bigg (and the l/r/m variants) size the FOLLOWING delimiter to
 	// a fixed height instead of stretching it to surrounding content.
@@ -1081,6 +1092,63 @@ func (e *engine) primeBox(n int, sty style) *box {
 		}
 	}
 	return e.hlist(items, sty)
+}
+
+// parseCharCode reads the character-code number that follows \char and returns it
+// with the remaining tokens. It accepts the TeX number forms that reach math:
+// `<char> or `\<sym> (the code point of that one character — the tokenizer turns a
+// control symbol like \^ into a tCtrl whose text is that character), "<hex>, and a
+// plain decimal run. ok is false when no number follows.
+func parseCharCode(toks []token) (code int, rest []token, ok bool) {
+	if len(toks) == 0 {
+		return 0, toks, false
+	}
+	// `<char> / `\<sym>: the following character's own code point.
+	if toks[0].kind == tChar && toks[0].r == '`' {
+		toks = toks[1:]
+		if len(toks) == 0 {
+			return 0, toks, false
+		}
+		switch toks[0].kind {
+		case tCtrl:
+			if rs := []rune(toks[0].text); len(rs) > 0 {
+				return int(rs[0]), toks[1:], true
+			}
+			return 0, toks, false
+		case tChar:
+			return int(toks[0].r), toks[1:], true
+		default:
+			return 0, toks, false
+		}
+	}
+	base := 10
+	if toks[0].kind == tChar && toks[0].r == '"' {
+		base, toks = 16, toks[1:]
+	}
+	var digits []rune
+	for len(toks) > 0 && toks[0].kind == tChar && isBaseDigit(toks[0].r, base) {
+		digits = append(digits, toks[0].r)
+		toks = toks[1:]
+	}
+	if len(digits) == 0 {
+		return 0, toks, false
+	}
+	v, err := strconv.ParseInt(string(digits), base, 32)
+	if err != nil || v < 0 || v > 0x10FFFF {
+		return 0, toks, false
+	}
+	return int(v), toks, true
+}
+
+// isBaseDigit reports whether r is a digit in base 10 or 16.
+func isBaseDigit(r rune, base int) bool {
+	switch {
+	case r >= '0' && r <= '9':
+		return true
+	case base == 16 && (r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F'):
+		return true
+	}
+	return false
 }
 
 // mustGlyph returns a glyph box, or a zero-width empty box if the font lacks the
