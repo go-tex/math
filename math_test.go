@@ -474,7 +474,7 @@ func TestDefaultSizeAndEmpty(t *testing.T) {
 		t.Error("empty group emitted a path")
 	}
 	// absent glyph → empty box.
-	e := &engine{font: r.font, upem: float64(r.font.UnitsPerEm())}
+	e := &engine{font: r.font, upem: float64(r.font.UnitsPerEm()), gc: r.gc}
 	if _, ok := e.glyphBox(0x10FFFF, 32, clsOrd); ok {
 		t.Error("absent glyph reported ok")
 	}
