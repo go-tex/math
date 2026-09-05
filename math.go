@@ -24,12 +24,43 @@ import (
 	"fmt"
 	gomath "math"
 	"strings"
+	"sync"
 
 	"github.com/go-opentype/opentype"
 )
 
 // Renderer typesets TeX math with a single MATH-table font.
-type Renderer struct{ font *opentype.Font }
+type Renderer struct {
+	font *opentype.Font
+	gc   *glyphCache
+}
+
+// glyphKey identifies one glyph at one pixel size — the only two things a glyph's
+// outline work depends on.
+type glyphKey struct {
+	gid opentype.GlyphIndex
+	px  int
+}
+
+// glyphCache memoises the per-size Face and the per-(glyph,size) outline results.
+//
+// It lives on the RENDERER, not the engine, because an engine is built per FORMULA
+// (see renderM) while a document sets thousands of formulas from the same handful of
+// glyphs and sizes. Without it, face() built a fresh Face on every call — including
+// from mc/axis/scriptSize — and every occurrence of every glyph re-ran the outline
+// interpreter: measured from go-tex/engine on a 198-page thesis, gidBox and
+// gidVExtent together accounted for ~900 MB of the render's allocation.
+//
+// The mutex is deliberate. A Renderer used to be immutable and therefore safe to
+// share between goroutines; caching would have taken that away silently. The lock is
+// held only around a map access, which is nothing beside running the CFF interpreter
+// it avoids.
+type glyphCache struct {
+	mu    sync.Mutex
+	faces map[int]*opentype.Face
+	paths map[glyphKey]string
+	vext  map[glyphKey][2]float64
+}
 
 // New builds a Renderer from an OpenType font carrying a MATH table.
 func New(fontBytes []byte) (*Renderer, error) {
@@ -40,7 +71,11 @@ func New(fontBytes []byte) (*Renderer, error) {
 	if !f.HasMath() {
 		return nil, fmt.Errorf("texmath: font has no MATH table")
 	}
-	return &Renderer{font: f}, nil
+	return &Renderer{font: f, gc: &glyphCache{
+		faces: map[int]*opentype.Face{},
+		paths: map[glyphKey]string{},
+		vext:  map[glyphKey][2]float64{},
+	}}, nil
 }
 
 // RenderSVG typesets tex at the given base pixel size (inline/text style) and
@@ -84,7 +119,7 @@ func (r *Renderer) renderM(tex string, sizePx int, display bool) (string, Metric
 	if sizePx <= 0 {
 		sizePx = 40
 	}
-	e := &engine{font: r.font, upem: float64(r.font.UnitsPerEm())}
+	e := &engine{font: r.font, upem: float64(r.font.UnitsPerEm()), gc: r.gc}
 	b, _, err := e.parseList(expandMacros(resolveConditionals(tokenize(tex))), style{px: sizePx, display: display, spacious: true}, stopEnd)
 	if err != nil {
 		return "", Metrics{}, err
@@ -96,7 +131,7 @@ func (r *Renderer) render(tex string, sizePx int, display bool) (string, error) 
 	if sizePx <= 0 {
 		sizePx = 40
 	}
-	e := &engine{font: r.font, upem: float64(r.font.UnitsPerEm())}
+	e := &engine{font: r.font, upem: float64(r.font.UnitsPerEm()), gc: r.gc}
 	b, _, err := e.parseList(expandMacros(resolveConditionals(tokenize(tex))), style{px: sizePx, display: display, spacious: true}, stopEnd)
 	if err != nil {
 		return "", err
@@ -168,9 +203,35 @@ func rule(dst *box, x, y, w, h float64) {
 type engine struct {
 	font *opentype.Font
 	upem float64
+	gc   *glyphCache // shared across formulas; see glyphCache
 }
 
-func (e *engine) face(px int) *opentype.Face { return e.font.NewFace(px) }
+func (e *engine) face(px int) *opentype.Face {
+	e.gc.mu.Lock()
+	defer e.gc.mu.Unlock()
+	if f, ok := e.gc.faces[px]; ok {
+		return f
+	}
+	f := e.font.NewFace(px)
+	e.gc.faces[px] = f
+	return f
+}
+
+// gidPath is GlyphSVGPath memoised per (glyph, size).
+func (e *engine) gidPath(gid opentype.GlyphIndex, px int) string {
+	k := glyphKey{gid, px}
+	e.gc.mu.Lock()
+	d, ok := e.gc.paths[k]
+	e.gc.mu.Unlock()
+	if ok {
+		return d
+	}
+	d, _ = e.face(px).GlyphSVGPath(gid)
+	e.gc.mu.Lock()
+	e.gc.paths[k] = d
+	e.gc.mu.Unlock()
+	return d
+}
 
 // mc reads a MATH constant scaled to px.
 func (e *engine) mc(which opentype.MathConstant, px int) float64 {
@@ -203,7 +264,7 @@ func (e *engine) glyphBox(r rune, px int, cls atomClass) (*box, bool) {
 // gidBox builds a box for an already-resolved glyph index.
 func (e *engine) gidBox(gid opentype.GlyphIndex, px int, cls atomClass) *box {
 	fc := e.face(px)
-	d, _ := fc.GlyphSVGPath(gid)
+	d := e.gidPath(gid, px)
 	h, dp := e.gidVExtent(gid, px)
 	b := &box{w: float64(fc.AdvanceIndex(gid)), h: h, d: dp, cls: cls}
 	if d != "" {
@@ -215,6 +276,18 @@ func (e *engine) gidBox(gid opentype.GlyphIndex, px int, cls atomClass) *box {
 // gidVExtent returns a glyph's ink extent above (h) and below (d) the baseline,
 // in pixels (SVG Y-down).
 func (e *engine) gidVExtent(gid opentype.GlyphIndex, px int) (h, d float64) {
+	k := glyphKey{gid, px}
+	e.gc.mu.Lock()
+	v, ok := e.gc.vext[k]
+	e.gc.mu.Unlock()
+	if ok {
+		return v[0], v[1]
+	}
+	defer func() {
+		e.gc.mu.Lock()
+		e.gc.vext[k] = [2]float64{h, d}
+		e.gc.mu.Unlock()
+	}()
 	segs, _ := e.face(px).GlyphOutline(gid)
 	s := e.scale(px)
 	minY, maxY := 0.0, 0.0
