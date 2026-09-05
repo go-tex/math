@@ -288,8 +288,37 @@ func (e *engine) gidBox(gid opentype.GlyphIndex, px int, cls atomClass) *box {
 }
 
 // gidVExtent returns a glyph's ink extent above (h) and below (d) the baseline,
-// in pixels (SVG Y-down).
+// in pixels (SVG Y-down). Both are clamped at zero: a box always contains its own
+// baseline, which is what a box's h/d mean. When you need where the ink ACTUALLY
+// is — an accent's is entirely above the baseline, so its d is 0 and says nothing
+// about how high its lowest ink sits — use gidInk.
 func (e *engine) gidVExtent(gid opentype.GlyphIndex, px int) (h, d float64) {
+	top, bot := e.gidInk(gid, px)
+	if top < 0 {
+		top = 0
+	}
+	if bot > 0 {
+		bot = 0
+	}
+	return top, -bot
+}
+
+// segPoints is how many of a Segment's fixed [2]Point array each operation
+// actually uses. A table rather than a switch: the font at hand may never emit
+// one of the operations, and a branch no glyph reaches is a branch no test can
+// honestly cover.
+var segPoints = [...]int{
+	opentype.SegMoveTo: 1,
+	opentype.SegLineTo: 1,
+	opentype.SegQuadTo: 2,
+	opentype.SegClose:  0,
+}
+
+// gidInk returns the glyph's highest and lowest ink above the baseline, in pixels
+// and positive-up, NEITHER clamped to zero. For a combining accent both are
+// positive: the glyph is drawn well above its own baseline, and the lower value is
+// what has to be lined up with the top of an accented nucleus.
+func (e *engine) gidInk(gid opentype.GlyphIndex, px int) (top, bot float64) {
 	k := glyphKey{gid, px}
 	e.gc.mu.Lock()
 	v, ok := e.gc.vext[k]
@@ -299,24 +328,33 @@ func (e *engine) gidVExtent(gid opentype.GlyphIndex, px int) (h, d float64) {
 	}
 	defer func() {
 		e.gc.mu.Lock()
-		e.gc.vext[k] = [2]float64{h, d}
+		e.gc.vext[k] = [2]float64{top, bot}
 		e.gc.mu.Unlock()
 	}()
 	segs, _ := e.face(px).GlyphOutline(gid)
 	s := e.scale(px)
-	minY, maxY := 0.0, 0.0
+	first := true
 	for _, sg := range segs {
-		for _, p := range sg.P {
-			y := -p.Y * s
-			if y < minY {
-				minY = y
+		// Only the points the operation actually uses (segPoints): Segment.P is a
+		// fixed [2]Point, so a MoveTo/LineTo leaves P[1] and a Close leaves both at
+		// the ZERO point. Reading them all dragged every glyph's ink box down to the
+		// baseline, which the old clamp then hid — an accent's ink appeared to start
+		// at y=0 when it really starts near the top of the em.
+		for _, p := range sg.P[:segPoints[sg.Op]] {
+			y := float64(p.Y) * s
+			if first {
+				top, bot, first = y, y, false
+				continue
 			}
-			if y > maxY {
-				maxY = y
+			if y > top {
+				top = y
+			}
+			if y < bot {
+				bot = y
 			}
 		}
 	}
-	return -minY, maxY
+	return top, bot
 }
 
 // interAtom returns the space (px) inserted between two adjacent atom classes,
@@ -757,7 +795,19 @@ func (e *engine) accent(nuc *box, acc rune, sty style) *box {
 	place(out, nuc, 0, 0)
 	ax := (nuc.w - ab.w) / 2
 	gap := float64(sty.px) * 0.04
-	ty := -(nuc.h + gap + ab.d) // accent ink bottom sits just above the nucleus
+	// The accent's ink bottom sits just above the nucleus. That is what the code
+	// always meant to do, but it used the accent's DEPTH, which is zero for a glyph
+	// drawn entirely above its own baseline — so it lined up the accent's BASELINE
+	// with the top of the nucleus and the ink then floated a whole accent-height
+	// higher. At 11pt that made $\hat{x}$ a 13.2pt box over a 5.4pt letter, tall
+	// enough that a host engine could no longer fit the line in a 13.6pt baseline
+	// distance and fell back to \lineskip.
+	gid, hasGID := e.font.GlyphIndex(acc)
+	inkBot := 0.0
+	if hasGID {
+		_, inkBot = e.gidInk(gid, sty.px)
+	}
+	ty := -(nuc.h + gap) + inkBot
 	place(out, ab, ax, ty)
 	out.h = -ty + ab.h
 	return out
