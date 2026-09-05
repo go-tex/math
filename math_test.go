@@ -664,3 +664,46 @@ func TestLeftRightMatchesPlainDelimiters(t *testing.T) {
 			tall.Height+tall.Depth, plain.Height+plain.Depth)
 	}
 }
+
+// A superscript's baseline may drop below the top of its base, by at most the
+// font's SuperscriptBaselineDropMax. The term was there but multiplied by ZERO,
+// which pinned every superscript's baseline to the top of the base and made the
+// whole atom as tall as base-height plus superscript-height. It showed worst on a
+// prime, whose glyph is drawn high in its own right: $f'(x)$ came out 15.22pt at
+// 11pt against the 10.57 of $f(x)$.
+func TestSuperscriptBaselineDrops(t *testing.T) {
+	r := newRenderer(t)
+	_, plain, err := r.RenderSVGMetrics(`f(x)`, 11)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		tex string
+		max float64
+	}{
+		{`f'(x)`, 13},
+		{`x_i^2`, 11},
+		{`\sum_{i=1}^n a_i`, 12},
+	} {
+		_, m, err := r.RenderSVGMetrics(c.tex, 11)
+		if err != nil {
+			t.Fatalf("%s: %v", c.tex, err)
+		}
+		if got := m.Height + m.Depth; got > c.max {
+			t.Errorf("$%s$ : %.2f pt, au-delà de %.2f (le témoin $f(x)$ fait %.2f)",
+				c.tex, got, c.max, plain.Height+plain.Depth)
+		}
+	}
+	// The superscript must still be raised: it is not a drop to the baseline.
+	_, sup, err := r.RenderSVGMetrics(`x^2`, 11)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, base, err := r.RenderSVGMetrics(`x`, 11)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sup.Height <= base.Height {
+		t.Errorf("hauteurs %.2f ($x^2$) et %.2f ($x$) : un exposant doit dépasser sa base", sup.Height, base.Height)
+	}
+}

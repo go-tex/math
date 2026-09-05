@@ -427,7 +427,7 @@ func (e *engine) attachScripts(nuc, sup, sub *box, sty style) *box {
 	out.w, out.h, out.d = nuc.w, nuc.h, nuc.d
 	x := nuc.w
 	if sup != nil {
-		shift := gomath.Max(e.mc(opentype.SuperscriptShiftUp, sty.px), nuc.h-e.mc(opentype.SuperscriptBaselineDropMax, sty.px)*0)
+		shift := gomath.Max(e.mc(opentype.SuperscriptShiftUp, sty.px), nuc.h-e.mc(opentype.SuperscriptBaselineDropMax, sty.px))
 		place(out, sup, x, -shift)
 		if t := shift + sup.h; t > out.h {
 			out.h = t
