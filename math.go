@@ -154,9 +154,23 @@ func (s style) script(e *engine) style {
 	return style{px: e.scriptSize(s.px), spacious: false, alpha: s.alpha}
 }
 
-// inner returns the text-style context for fraction parts / matrix cells.
+// inner returns the text-style context for matrix cells and the like.
 func (s style) inner() style {
 	return style{px: s.px, spacious: s.spacious, alpha: s.alpha}
+}
+
+// fracInner returns the style a fraction's numerator and denominator are set in.
+// TeX (Appendix G, rule 15b) moves them ONE style down: a display-style fraction
+// sets its parts in text style — same size — while a TEXT-style fraction sets
+// them in SCRIPT style, at script size. Keeping them at text size makes an inline
+// fraction nearly as tall as a displayed one, which no longer fits inside a
+// baseline distance: the host engine then falls back to \lineskip and every line
+// carrying one is set ~27% further apart than its neighbours.
+func (s style) fracInner(e *engine) style {
+	if s.display {
+		return style{px: s.px, spacious: s.spacious, alpha: s.alpha}
+	}
+	return style{px: e.scriptSize(s.px), spacious: s.spacious, alpha: s.alpha}
 }
 
 // ── atom classes & boxes ────────────────────────────────────────────────────
