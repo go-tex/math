@@ -359,11 +359,11 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 		} else if name == "tfrac" {
 			fsty.display = false
 		}
-		num, r1, err := e.parseGroupArg(toks, fsty.inner())
+		num, r1, err := e.parseGroupArg(toks, fsty.fracInner(e))
 		if err != nil {
 			return nil, 0, false, nil, err
 		}
-		den, r2, err := e.parseGroupArg(r1, fsty.inner())
+		den, r2, err := e.parseGroupArg(r1, fsty.fracInner(e))
 		if err != nil {
 			return nil, 0, false, nil, err
 		}
@@ -612,11 +612,11 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 		case "2", "3":
 			fsty = fsty.script(e)
 		}
-		num, r5, err := e.parseGroupArg(r4, fsty.inner())
+		num, r5, err := e.parseGroupArg(r4, fsty.fracInner(e))
 		if err != nil {
 			return nil, 0, false, nil, err
 		}
-		den, r6, err := e.parseGroupArg(r5, fsty.inner())
+		den, r6, err := e.parseGroupArg(r5, fsty.fracInner(e))
 		if err != nil {
 			return nil, 0, false, nil, err
 		}
@@ -637,11 +637,11 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 		} else if name == "tbinom" {
 			fsty.display = false
 		}
-		num, r1, err := e.parseGroupArg(toks, fsty.inner())
+		num, r1, err := e.parseGroupArg(toks, fsty.fracInner(e))
 		if err != nil {
 			return nil, 0, false, nil, err
 		}
-		den, r2, err := e.parseGroupArg(r1, fsty.inner())
+		den, r2, err := e.parseGroupArg(r1, fsty.fracInner(e))
 		if err != nil {
 			return nil, 0, false, nil, err
 		}

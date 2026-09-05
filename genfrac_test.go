@@ -141,3 +141,36 @@ func TestReadArgText(t *testing.T) {
 		t.Errorf("readArgText(nil) = %q, %v; want \"\", nil", got, rest)
 	}
 }
+
+// A fraction one-style-down: TeX (Appendix G, rule 15b) sets a TEXT-style
+// fraction's numerator and denominator in SCRIPT style, and only a display-style
+// one keeps them at text size. Setting both at text size made an inline fraction
+// nearly as tall as a displayed one — 16.3 pt against 18.3 at 11pt — which no
+// longer fits inside a host engine's baseline distance: go-tex/engine then fell
+// back to \lineskip and set every line carrying an inline fraction 17.3 pt apart
+// instead of 13.6, where real LaTeX keeps 13.6.
+func TestInlineFractionIsShorterThanDisplay(t *testing.T) {
+	r := newRenderer(t)
+	_, inl, err := r.RenderSVGMetrics(`\frac{a}{b}`, 11)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, dis, err := r.RenderDisplaySVGMetrics(`\frac{a}{b}`, 11)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hi, hd := inl.Height+inl.Depth, dis.Height+dis.Depth
+	if hi >= hd {
+		t.Errorf("hauteurs %.3f (inline) et %.3f (display) : une fraction en ligne doit être PLUS COURTE", hi, hd)
+	}
+	// The point of the rule: it fits on a text line. A 11pt line is 13.6 pt of
+	// baseline distance, so a taller box forces the host engine onto \lineskip.
+	if hi > 13.6 {
+		t.Errorf("hauteur en ligne %.3f pt : ne tient pas dans un interligne de 13,6 pt", hi)
+	}
+	// The parts shrink, so the fraction is narrower too — the width is what showed
+	// the sizes were identical before.
+	if inl.Width >= dis.Width {
+		t.Errorf("largeurs %.3f (inline) et %.3f (display) : les parties doivent rétrécir", inl.Width, dis.Width)
+	}
+}
