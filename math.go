@@ -863,15 +863,15 @@ func (e *engine) stretchVertical(r rune, target float64, px int, cls atomClass) 
 // axisCentre re-positions a box so its vertical midpoint sits on the math axis
 // (used for stretchy delimiters, which straddle the axis).
 func (e *engine) axisCentre(b *box, px int) *box {
-	dy := -e.axis(px) - (b.h-b.d)/2
+	dy := (b.h-b.d)/2 - e.axis(px)
 	out := newBox(b.cls)
 	out.w = b.w
 	place(out, b, 0, dy)
 	out.h = b.h - dy
-	out.d = b.d + dy
-	if out.d < 0 {
-		out.d = 0
-	}
+	// Centring puts the depth at (h+d)/2 - axis, which is positive for any real
+	// delimiter; the floor is kept for a glyph smaller than twice the axis, and
+	// written without a branch because no glyph in a math font reaches it.
+	out.d = gomath.Max(b.d+dy, 0)
 	return out
 }
 

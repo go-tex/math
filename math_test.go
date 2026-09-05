@@ -630,3 +630,37 @@ func TestGlyphInkIgnoresUnusedSegmentPoints(t *testing.T) {
 		t.Errorf("circonflexe haut de %.3f pt : trop épais pour un accent", top-bot)
 	}
 }
+
+// \left( x \right) is the same as ( x ): TeX picks the smallest delimiter that
+// covers the content, and for content no taller than a letter that is the plain
+// one. axisCentre shifted the delimiter by -axis-(h-d)/2 where centring on the
+// axis wants (h-d)/2-axis, so a parenthesis was raised 4.875pt instead of 0.125
+// and the pair came out 14.18pt tall against the 10.25pt of a plain "(x)".
+func TestLeftRightMatchesPlainDelimiters(t *testing.T) {
+	r := newRenderer(t)
+	_, plain, err := r.RenderSVGMetrics(`(x)`, 11)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, big, err := r.RenderSVGMetrics(`\left(x\right)`, 11)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The pair is centred on the math axis, which may shift it a hair against the
+	// plain glyphs; what must match is the SIZE. Before the fix it was 14.18 against
+	// 10.25, so a tenth of a point is a generous tolerance for "did not grow".
+	const tol = 0.1
+	if d := (big.Height + big.Depth) - (plain.Height + plain.Depth); d > tol || d < -tol {
+		t.Errorf("tailles %.3f (\\left) et %.3f (nues) : un délimiteur autour d'une lettre ne doit pas grandir",
+			big.Height+big.Depth, plain.Height+plain.Depth)
+	}
+	// It must still grow for content that needs it.
+	_, tall, err := r.RenderSVGMetrics(`\left(\frac{a}{b}\right)`, 11)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tall.Height+tall.Depth <= plain.Height+plain.Depth {
+		t.Errorf("un délimiteur autour d'une fraction (%.3f) doit dépasser le cas nu (%.3f)",
+			tall.Height+tall.Depth, plain.Height+plain.Depth)
+	}
+}
