@@ -582,3 +582,51 @@ func TestFtoa(t *testing.T) {
 		}
 	}
 }
+
+// An accent sits just above its nucleus. It used to float a whole accent-height
+// higher: accent() lined the accent glyph's BASELINE up with the top of the
+// nucleus, using the accent's depth (zero, for a glyph drawn entirely above its
+// own baseline) as if it were the distance from baseline to ink. At 11pt the hat
+// of \hat{x} began 11.55 above the baseline while the x topped out at 5.20 — 6.35
+// of empty space, more than a letter-height — and the box came out 13.2 tall,
+// which no longer fits a host engine's 13.6 baseline distance.
+func TestAccentSitsJustAboveTheNucleus(t *testing.T) {
+	r := newRenderer(t)
+	_, base, err := r.RenderSVGMetrics(`x`, 11)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, acc := range []string{`\hat`, `\bar`, `\dot`, `\tilde`, `\vec`, `\check`} {
+		_, m, err := r.RenderSVGMetrics(acc+`{x}`, 11)
+		if err != nil {
+			t.Fatalf("%s: %v", acc, err)
+		}
+		if m.Height <= base.Height {
+			t.Errorf("%s{x} : hauteur %.2f, pas plus haute que x seul (%.2f)", acc, m.Height, base.Height)
+		}
+		// The whole accented box must still fit on a text line: at 11px the baseline
+		// distance is 13.6, so anything approaching it forces the host onto \lineskip.
+		if m.Height+m.Depth > 11 {
+			t.Errorf("%s{x} : boîte de %.2f pt, ne tient pas sur une ligne de texte", acc, m.Height+m.Depth)
+		}
+	}
+}
+
+// A glyph's ink box counts only the points its segments actually use. Segment.P
+// is a fixed [2]Point, so a MoveTo/LineTo leaves P[1] and a Close leaves both at
+// the zero point; reading them all put every glyph's ink bottom at the baseline.
+func TestGlyphInkIgnoresUnusedSegmentPoints(t *testing.T) {
+	r := newRenderer(t)
+	e := &engine{font: r.font, upem: float64(r.font.UnitsPerEm()), gc: r.gc}
+	gid, ok := e.font.GlyphIndex('ˆ')
+	if !ok {
+		t.Skip("la police n'a pas de circonflexe")
+	}
+	top, bot := e.gidInk(gid, 11)
+	if bot <= 0 {
+		t.Errorf("encre du circonflexe de %.3f à %.3f : un accent ne touche pas la ligne de base", bot, top)
+	}
+	if top-bot > 4 {
+		t.Errorf("circonflexe haut de %.3f pt : trop épais pour un accent", top-bot)
+	}
+}
