@@ -487,6 +487,8 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 			return nil, 0, false, nil, err
 		}
 		return e.brace(b, name == "overbrace", sty), clsOp, false, r, nil
+	case "rule":
+		return e.parseRule(toks, sty)
 	case "phantom", "hphantom", "vphantom":
 		b, r, err := e.parseGroupArg(toks, sty)
 		if err != nil {
