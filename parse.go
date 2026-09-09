@@ -372,7 +372,9 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 		var index *box
 		rest := toks
 		if len(rest) > 0 && rest[0].kind == tChar && rest[0].r == '[' {
-			ib, r, err := e.parseUntilBracket(rest[1:], sty.script(e))
+			// The degree is set in scriptSCRIPT style, not script:
+			// "\setbox\rootbox\hbox{$\m@th\scriptscriptstyle{#1}$}" (latex.ltx:11187).
+			ib, r, err := e.parseUntilBracket(rest[1:], sty.scriptScript(e))
 			if err != nil {
 				return nil, 0, false, nil, err
 			}

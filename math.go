@@ -154,6 +154,13 @@ func (s style) script(e *engine) style {
 	return style{px: e.scriptSize(s.px), spacious: false, alpha: s.alpha}
 }
 
+// scriptScript returns the style of a SECOND-order script — what a radical's
+// degree is set in: "\setbox\rootbox\hbox{$\m@th\scriptscriptstyle{#1}$}"
+// (latex.ltx:11187).
+func (s style) scriptScript(e *engine) style {
+	return style{px: e.scriptScriptSize(s.px), spacious: false, alpha: s.alpha}
+}
+
 // inner returns the text-style context for matrix cells and the like.
 func (s style) inner() style {
 	return style{px: s.px, spacious: s.spacious, alpha: s.alpha}
@@ -256,6 +263,19 @@ func (e *engine) axis(px int) float64 { return e.mc(opentype.AxisHeight, px) }
 
 func (e *engine) scriptSize(px int) int {
 	pct := e.face(px).MathConstant(opentype.ScriptPercentScaleDown)
+	s := px * pct / 100
+	if s < 1 {
+		s = 1
+	}
+	return s
+}
+
+// scriptScriptSize is the size of a SECOND-order script. TeX has three sizes, not
+// a ladder: \scriptscriptfont is its own font, so scriptscript is a fraction of the
+// TEXT size and not the script size scaled again. The MATH table says the same with
+// a second constant, and 0.5 is not 0.7 x 0.7.
+func (e *engine) scriptScriptSize(px int) int {
+	pct := e.face(px).MathConstant(opentype.ScriptScriptPercentScaleDown)
 	s := px * pct / 100
 	if s < 1 {
 		s = 1
@@ -487,15 +507,29 @@ func (e *engine) fraction(num, den *box, sty style) *box {
 		gapN = e.mc(opentype.FractionNumDisplayStyleGapMin, px)
 		gapD = e.mc(opentype.FractionDenomDisplayStyleGapMin, px)
 	}
+	// pad is \nulldelimiterspace (1.2pt at 10pt, so 0.12em). TeX flanks the
+	// fraction with the two delimiters named in the noad, and \frac names none:
+	// var_delimiter then returns an EMPTY box, "use this width if no delimiter was
+	// found" (tex.web:13930), and those two boxes are hpacked OUTSIDE the vlist
+	// that carries the rule. The rule is a node INSIDE that vlist, so it takes the
+	// vlist's width — width(x), "this also equals width(z)", the equalised
+	// numerator/denominator width (tex.web, "Construct a vlist box for the
+	// fraction"). The bar therefore spans max(num, den) and NOT the padding.
+	//
+	// Drawing it across the full box overhung it by 2.4pt at 10pt, which is
+	// invisible on a wide fraction and enormous on a narrow one: measured against
+	// tectonic at 600dpi, \frac{a}{b} was 59% too wide (70px against 44) where
+	// \frac{a+b}{c+d} was 3.9% (188 against 181).
 	pad := float64(px) * 0.12
-	w := gomath.Max(num.w, den.w) + 2*pad
+	inner := gomath.Max(num.w, den.w)
+	w := inner + 2*pad
 	out := newBox(clsInner)
 	out.w = w
 	numBase := -(axis + rt/2 + gapN + num.d)
 	place(out, num, (w-num.w)/2, numBase)
 	denBase := -axis + rt/2 + gapD + den.h
 	place(out, den, (w-den.w)/2, denBase)
-	rule(out, 0, -axis-rt/2, w, rt)
+	rule(out, pad, -axis-rt/2, inner, rt)
 	out.h = -numBase + num.h
 	out.d = denBase + den.d
 	return out
@@ -827,9 +861,27 @@ func (e *engine) radical(body, index *box, sty style) *box {
 	out := newBox(clsOrd)
 	ruleY := -(body.h + gap + rt)
 	x := 0.0
+	degreeTop := 0.0
 	if index != nil {
-		place(out, index, x, ruleY+index.d*0)
-		x += index.w * 0.8
+		// The degree of a radical is placed by three MATH constants:
+		// RadicalDegreeBottomRaisePercent is "height of the bottom of the radical
+		// degree, if such be present, in proportion to the ASCENDER of the radical
+		// sign", with RadicalKernBeforeDegree before it and a NEGATIVE
+		// RadicalKernAfterDegree after. plain.tex says the same in its own terms:
+		// \r@@t raises the degree by .6(\ht0-\dp0) of the radical box and brackets
+		// it with \mskip5mu / \mskip-10mu.
+		//
+		// The degree therefore sits INSIDE the sign's vertical extent, which is why
+		// the reference sets \sqrt[3]{x} to exactly the height of \sqrt{x}. Placing
+		// it with its BASELINE at the rule — as this did — floats it entirely above
+		// the sign and, because out.h did not count it, above the box as well: 136px
+		// against tectonic's 83 at 600dpi, +64%.
+		x += e.mc(opentype.RadicalKernBeforeDegree, px)
+		ascender := -ruleY // the sign's ink top, above the baseline
+		raise := e.mc(opentype.RadicalDegreeBottomRaisePercent, px) / 100 * ascender
+		place(out, index, x, -(raise + index.d))
+		degreeTop = raise + index.d + index.h
+		x = gomath.Max(x+index.w+e.mc(opentype.RadicalKernAfterDegree, px), 0)
 	}
 	// Place the sign so its ink top meets the rule; its tick then reaches down to
 	// (about) the body's depth.
@@ -839,7 +891,7 @@ func (e *engine) radical(body, index *box, sty style) *box {
 	place(out, body, x, 0)
 	rule(out, x, ruleY, body.w, rt)
 	out.w = x + body.w
-	out.h = -ruleY + rt + asc
+	out.h = gomath.Max(-ruleY+rt+asc, degreeTop)
 	out.d = gomath.Max(body.d, ty+sign.d)
 	return out
 }
