@@ -1151,11 +1151,14 @@ func ftoa(v float64) string {
 // where the reference sets it at 62px — less than half (go-tex/math#…, reported from
 // the go-tex playground).
 //
-// base is returned unchanged when the font offers no larger variant, which is what a
-// text font without a MATH table does.
+// An operator that ALREADY reaches that height is left alone: it qualifies as a
+// display-style large operator as it stands, so hunting a variant could only
+// return a different glyph for no reason. The same test covers a MATH table that
+// omits the constant — MathConstant then reports 0, and no box has a negative
+// height, so the base is kept rather than swapped for the first variant.
 func (e *engine) displayOperator(r rune, px int, cls atomClass, base *box) *box {
 	target := e.mc(opentype.DisplayOperatorMinHeight, px)
-	if target <= 0 || base.h+base.d >= target {
+	if base.h+base.d >= target {
 		return base
 	}
 	return e.stretchVertical(r, target, px, cls)

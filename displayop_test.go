@@ -3,7 +3,11 @@
 
 package math
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/go-opentype/opentype"
+)
 
 // A large operator grows in display style. TeX does it by walking one step up the
 // font's charlist:
@@ -50,5 +54,21 @@ func TestDisplayLeavesOrdinaryAtomsAlone(t *testing.T) {
 		if got, want := display.Height+display.Depth, inline.Height+inline.Depth; got != want {
 			t.Errorf("%s: display %.1f != inline %.1f — an ordinary atom must not grow", tex, got, want)
 		}
+	}
+}
+
+// An operator that already reaches DisplayOperatorMinHeight is returned as it
+// stands. No glyph of the default font does — a display \int at 32px measures
+// 30.5 against a target of 58 — so the contract is exercised here directly, with
+// a box tall enough to satisfy it. It is what keeps a MATH table that omits the
+// constant (MathConstant reports 0) from swapping the base for the first variant.
+func TestDisplayOperatorKeepsAnOperatorAlreadyTallEnough(t *testing.T) {
+	r := newRenderer(t)
+	e := &engine{font: r.font, upem: float64(r.font.UnitsPerEm()), gc: r.gc}
+	tall := newBox(clsOp)
+	tall.h = e.mc(opentype.DisplayOperatorMinHeight, 32) + 1
+	if got := e.displayOperator('∫', 32, clsOp, tall); got != tall {
+		t.Errorf("a %.1f-tall operator was replaced although the target is %.1f",
+			tall.h, e.mc(opentype.DisplayOperatorMinHeight, 32))
 	}
 }
