@@ -452,6 +452,10 @@ func TestClampsAndDelimiters(t *testing.T) {
 	if _, err := r.RenderSVG(`x^2_3`, 1); err != nil {
 		t.Fatalf("tiny size: %v", err)
 	}
+	// and the scriptSCRIPT floor, which a radical's degree is the only user of.
+	if _, err := r.RenderSVG(`\sqrt[3]{x}`, 1); err != nil {
+		t.Fatalf("tiny size, radical degree: %v", err)
+	}
 	// single-item and ragged matrix rows.
 	renderOK(t, r, `\begin{matrix} a \\ b & c \end{matrix}`)
 	// primes combined with an explicit superscript.
