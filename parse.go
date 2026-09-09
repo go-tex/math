@@ -741,6 +741,9 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 	// symbols
 	if s, ok := symbols[name]; ok {
 		b := e.mustGlyph(s.r, sty.px, s.cls)
+		if s.cls == clsOp && sty.display {
+			b = e.displayOperator(s.r, sty.px, s.cls, b)
+		}
 		return b, s.cls, opLimits[name], toks, nil
 	}
 	return nil, 0, false, nil, fmt.Errorf(`texmath: unknown command \%s`, name)

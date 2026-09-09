@@ -1134,3 +1134,29 @@ func ftoa(v float64) string {
 	s := strings.TrimRight(fmt.Sprintf("%.3f", v), "0")
 	return strings.TrimSuffix(s, ".")
 }
+
+// displayOperator grows a large operator for display style. TeX does it by walking
+// one step up the font's charlist:
+//
+//	if (cur_style<text_style)and(char_tag(cur_i)=list_tag) then {make it larger}
+//	  begin c:=rem_byte(cur_i); …; character(nucleus(q)):=c; end   tex.web:14685-14691
+//
+// An OpenType MATH font says the same thing with two pieces: the glyph's vertical
+// MathVariants, and MathConstants' DisplayOperatorMinHeight — "the minimum height
+// required for a glyph in display style to be considered a display-style large
+// operator". So the variant to take is the first one that reaches that height.
+//
+// Without this a display \int was set at its inline size: measured against tectonic
+// on \[ \int_0^\infty e^{-x^2}\,dx \], the integral sign came out 28px tall at 200dpi
+// where the reference sets it at 62px — less than half (go-tex/math#…, reported from
+// the go-tex playground).
+//
+// base is returned unchanged when the font offers no larger variant, which is what a
+// text font without a MATH table does.
+func (e *engine) displayOperator(r rune, px int, cls atomClass, base *box) *box {
+	target := e.mc(opentype.DisplayOperatorMinHeight, px)
+	if target <= 0 || base.h+base.d >= target {
+		return base
+	}
+	return e.stretchVertical(r, target, px, cls)
+}
