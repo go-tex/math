@@ -343,7 +343,7 @@ func (e *engine) parseAtom(toks []token, sty style) (*box, atomClass, bool, []to
 	case tCtrl:
 		return e.parseControl(t.text, toks[1:], sty)
 	default: // tChar
-		r := mapAlpha(t.r, sty)
+		r := mapAlpha(mathChar(t.r), sty)
 		b := e.mustGlyph(r, sty.px, clsOrd)
 		return b, charClass(t.r), false, toks[1:], nil
 	}
@@ -1238,20 +1238,64 @@ func readOpName(toks []token) (string, []token, error) {
 
 // ── character classes & alphabets ───────────────────────────────────────────
 
+// charClass gives a source character its maths class. fontmath.ltx spells the
+// whole ASCII table out, one \DeclareMathSymbol per character (lines 149-158,
+// 168-169, 171):
+//
+//	{*}{\mathbin}   {+}{\mathbin}   {-}{\mathbin}
+//	{=}{\mathrel}   {<}{\mathrel}   {>}{\mathrel}   {:}{\mathrel}
+//	{,}{\mathpunct} {;}{\mathpunct}
+//	{!}{\mathclose} {?}{\mathclose}
+//	{.}{\mathord}   {/}{\mathord}
+//
+// Two of those cost real space, because Appendix G's table (tex.web:15062) puts
+// none between two Ord atoms and a medium space around a Bin:
+//
+//   - `/` is ORD, not Bin: `a/b` sets tight, as one word. Setting it as a binary
+//     operator added 8mu that the reference does not have.
+//   - `:` is REL, not Ord: `a:b` takes a thick space each side, and `:=` sets
+//     tight because Rel-Rel is 0.
+//
+// `!` and `?` are Close rather than Ord. The two rows of the spacing table are
+// identical, so nothing moves after them; the columns are not (Op-Ord is thin
+// where Op-Close is 0), so `\lim ?` tightens.
 func charClass(r rune) atomClass {
 	switch r {
-	case '+', '-', '*', '/':
+	case '+', '-', '*':
 		return clsBin
-	case '=', '<', '>':
+	case '=', '<', '>', ':':
 		return clsRel
 	case '(', '[':
 		return clsOpen
-	case ')', ']':
+	case ')', ']', '!', '?':
 		return clsClose
 	case ',', ';':
 		return clsPunct
-	default:
+	default: // '.', '/', letters, digits
 		return clsOrd
+	}
+}
+
+// mathChar maps a source character to the glyph maths mode sets for it, where the
+// two differ. Only two entries of that same table name a glyph other than the
+// character typed, and both point into family "symbols" — cmsy:
+//
+//	\DeclareMathSymbol{*}{\mathbin}{symbols}{"03} % \ast   fontmath.ltx:150
+//	\DeclareMathSymbol{-}{\mathbin}{symbols}{"00}          fontmath.ltx:153
+//
+// cmsy slot 0 is MINUS SIGN and slot 3 ASTERISK OPERATOR: U+2212 and U+2217, the
+// glyphs an OpenType math font carries. Set from the ASCII characters instead, a
+// formula gets a text HYPHEN — at 10pt in the default font 3.0pt wide and 2.83pt
+// tall, against 7.0pt and a bar on the maths axis for `+` — and a raised
+// typographic asterisk (6.89pt tall) where \ast sits on the axis (4.82pt).
+func mathChar(r rune) rune {
+	switch r {
+	case '-':
+		return '\u2212' // MINUS SIGN
+	case '*':
+		return '\u2217' // ASTERISK OPERATOR
+	default:
+		return r
 	}
 }
 
