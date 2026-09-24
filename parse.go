@@ -1602,6 +1602,41 @@ var symbols = map[string]sym{
 	"_": {'_', clsOrd}, "$": {'$', clsOrd},
 	// mathtools relation-punctuation seen in the corpus
 	"vcentcolon": {'∶', clsRel}, "dblcolon": {'∷', clsRel},
+	// upgreek: the UPRIGHT Greek alphabet, one \DeclareMathSymbol per name in
+	// upgreek.sty. Each takes the same character as its italic counterpart above —
+	// this table already keys \mu on U+03BC, the upright codepoint, so \upmu is the
+	// same rune and the face decides. Added as a family: a paper that writes \upmu
+	// writes \upsigma on the next line, and an unknown one drops the whole formula.
+	"upalpha": {'α', clsOrd}, "upbeta": {'β', clsOrd}, "upchi": {'χ', clsOrd}, "updelta": {'δ', clsOrd},
+	"upepsilon": {'ϵ', clsOrd}, "upeta": {'η', clsOrd}, "upgamma": {'γ', clsOrd}, "upiota": {'ι', clsOrd},
+	"upkappa": {'κ', clsOrd}, "uplambda": {'λ', clsOrd}, "upmu": {'μ', clsOrd}, "upnu": {'ν', clsOrd},
+	"upomega": {'ω', clsOrd}, "upphi": {'ϕ', clsOrd}, "uppi": {'π', clsOrd}, "uppsi": {'ψ', clsOrd},
+	"uprho": {'ρ', clsOrd}, "upsigma": {'σ', clsOrd}, "uptau": {'τ', clsOrd}, "uptheta": {'θ', clsOrd},
+	"upupsilon": {'υ', clsOrd}, "upvarepsilon": {'ε', clsOrd}, "upvarphi": {'φ', clsOrd}, "upvarpi": {'ϖ', clsOrd},
+	"upvartheta": {'ϑ', clsOrd}, "upxi": {'ξ', clsOrd}, "upzeta": {'ζ', clsOrd},
+	"Updelta": {'Δ', clsOrd}, "Upgamma": {'Γ', clsOrd}, "Uplambda": {'Λ', clsOrd}, "Upomega": {'Ω', clsOrd},
+	"Upphi": {'Φ', clsOrd}, "Uppi": {'Π', clsOrd}, "Uppsi": {'Ψ', clsOrd}, "Upsigma": {'Σ', clsOrd},
+	"Uptheta": {'Θ', clsOrd}, "Upupsilon": {'Υ', clsOrd}, "Upxi": {'Ξ', clsOrd},
+	// amssymb / wasysym / fontmath ordinaries and relations the corpus drops on.
+	// Codepoints read from unicode-math-table.tex and confirmed against
+	// UnicodeData.txt, not from the AMS font slot, which is an encoding not a
+	// character:
+	//   U+2713 CHECK MARK                 \checkmark      amssymb AMSa "58
+	//   U+21E2 RIGHTWARDS DASHED ARROW    \dashrightarrow unicode-math \rightdasharrow
+	//   U+22E1 DOES NOT SUCCEED OR EQUAL  \nsucceq        amssymb AMSb "0F
+	//   U+00A7 SECTION SIGN               \mathsection    fontmath.ltx
+	//   U+2394                            \hexagon        wasysym
+	"checkmark": {'✓', clsOrd}, "mathsection": {'§', clsOrd},
+	"dashrightarrow": {'⇢', clsRel}, "nsucceq": {'⋡', clsRel},
+	"hexagon": {'\u2394', clsOrd},
+	// \varTheta is amsmath's, and it is NOT U+03F4: amsmath.sty:388 declares it at
+	// cmmi slot "02, the same slot \Theta occupies in the letters family, so it is
+	// the ITALIC capital theta — the upright U+03F4 "greek capital theta symbol"
+	// would be a different letter.
+	"varTheta": {'Θ', clsOrd},
+	// \mathellipsis is not a glyph at all: fontmath.ltx:512 defines it as
+	// \mathinner{\ldotp\ldotp\ldotp}, so it sets exactly as \ldots.
+	"mathellipsis": {'…', clsOrd},
 	// dotless letters and angle ordinaries (amssymb) seen in the corpus
 	"imath": {'ı', clsOrd}, "jmath": {'ȷ', clsOrd},
 	"measuredangle": {'∡', clsOrd}, "sphericalangle": {'∢', clsOrd},
