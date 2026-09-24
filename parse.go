@@ -1479,13 +1479,20 @@ var envTable = map[string]envInfo{
 var symbols = map[string]sym{
 	// greek lower
 	"alpha": {'α', clsOrd}, "beta": {'β', clsOrd}, "gamma": {'γ', clsOrd}, "delta": {'δ', clsOrd},
-	"epsilon": {'ε', clsOrd}, "varepsilon": {'ϵ', clsOrd}, "zeta": {'ζ', clsOrd}, "eta": {'η', clsOrd},
+	// \epsilon is the LUNATE one and \varepsilon the rounded one, not the other way
+	// round: fontmath.ltx:179 puts \epsilon at cmmi slot "0F and :198 \varepsilon at
+	// "22, and unicode-math-table.tex reads U+03F5 "greek lunate varepsilon symbol"
+	// for \epsilon against U+03B5 "rounded small varepsilon" for \varepsilon. This
+	// table had the pair the wrong way up, and so had \phi/\varphi below.
+	"epsilon": {'ϵ', clsOrd}, "varepsilon": {'ε', clsOrd}, "zeta": {'ζ', clsOrd}, "eta": {'η', clsOrd},
 	"theta": {'θ', clsOrd}, "vartheta": {'ϑ', clsOrd}, "iota": {'ι', clsOrd}, "kappa": {'κ', clsOrd},
 	"varkappa": {'ϰ', clsOrd}, "digamma": {'ϝ', clsOrd}, // AMS (amssymb) lowercase-greek variants
 	"lambda": {'λ', clsOrd}, "mu": {'μ', clsOrd}, "nu": {'ν', clsOrd}, "xi": {'ξ', clsOrd},
 	"pi": {'π', clsOrd}, "varpi": {'ϖ', clsOrd}, "rho": {'ρ', clsOrd}, "varrho": {'ϱ', clsOrd},
 	"sigma": {'σ', clsOrd}, "varsigma": {'ς', clsOrd}, "tau": {'τ', clsOrd}, "upsilon": {'υ', clsOrd},
-	"phi": {'φ', clsOrd}, "varphi": {'ϕ', clsOrd}, "chi": {'χ', clsOrd}, "psi": {'ψ', clsOrd}, "omega": {'ω', clsOrd},
+	// unicode-math-table.tex: U+03D5 "/straightphi - small phi" is \phi, U+03C6
+	// "curly or open small phi" is \varphi (fontmath.ltx:194 and :203).
+	"phi": {'ϕ', clsOrd}, "varphi": {'φ', clsOrd}, "chi": {'χ', clsOrd}, "psi": {'ψ', clsOrd}, "omega": {'ω', clsOrd},
 	// greek upper
 	"Gamma": {'Γ', clsOrd}, "Delta": {'Δ', clsOrd}, "Theta": {'Θ', clsOrd}, "Lambda": {'Λ', clsOrd},
 	"Xi": {'Ξ', clsOrd}, "Pi": {'Π', clsOrd}, "Sigma": {'Σ', clsOrd}, "Upsilon": {'Υ', clsOrd},
