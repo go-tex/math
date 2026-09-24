@@ -1479,13 +1479,20 @@ var envTable = map[string]envInfo{
 var symbols = map[string]sym{
 	// greek lower
 	"alpha": {'α', clsOrd}, "beta": {'β', clsOrd}, "gamma": {'γ', clsOrd}, "delta": {'δ', clsOrd},
-	"epsilon": {'ε', clsOrd}, "varepsilon": {'ϵ', clsOrd}, "zeta": {'ζ', clsOrd}, "eta": {'η', clsOrd},
+	// \epsilon is the LUNATE one and \varepsilon the rounded one, not the other way
+	// round: fontmath.ltx:179 puts \epsilon at cmmi slot "0F and :198 \varepsilon at
+	// "22, and unicode-math-table.tex reads U+03F5 "greek lunate varepsilon symbol"
+	// for \epsilon against U+03B5 "rounded small varepsilon" for \varepsilon. This
+	// table had the pair the wrong way up, and so had \phi/\varphi below.
+	"epsilon": {'ϵ', clsOrd}, "varepsilon": {'ε', clsOrd}, "zeta": {'ζ', clsOrd}, "eta": {'η', clsOrd},
 	"theta": {'θ', clsOrd}, "vartheta": {'ϑ', clsOrd}, "iota": {'ι', clsOrd}, "kappa": {'κ', clsOrd},
 	"varkappa": {'ϰ', clsOrd}, "digamma": {'ϝ', clsOrd}, // AMS (amssymb) lowercase-greek variants
 	"lambda": {'λ', clsOrd}, "mu": {'μ', clsOrd}, "nu": {'ν', clsOrd}, "xi": {'ξ', clsOrd},
 	"pi": {'π', clsOrd}, "varpi": {'ϖ', clsOrd}, "rho": {'ρ', clsOrd}, "varrho": {'ϱ', clsOrd},
 	"sigma": {'σ', clsOrd}, "varsigma": {'ς', clsOrd}, "tau": {'τ', clsOrd}, "upsilon": {'υ', clsOrd},
-	"phi": {'φ', clsOrd}, "varphi": {'ϕ', clsOrd}, "chi": {'χ', clsOrd}, "psi": {'ψ', clsOrd}, "omega": {'ω', clsOrd},
+	// unicode-math-table.tex: U+03D5 "/straightphi - small phi" is \phi, U+03C6
+	// "curly or open small phi" is \varphi (fontmath.ltx:194 and :203).
+	"phi": {'ϕ', clsOrd}, "varphi": {'φ', clsOrd}, "chi": {'χ', clsOrd}, "psi": {'ψ', clsOrd}, "omega": {'ω', clsOrd},
 	// greek upper
 	"Gamma": {'Γ', clsOrd}, "Delta": {'Δ', clsOrd}, "Theta": {'Θ', clsOrd}, "Lambda": {'Λ', clsOrd},
 	"Xi": {'Ξ', clsOrd}, "Pi": {'Π', clsOrd}, "Sigma": {'Σ', clsOrd}, "Upsilon": {'Υ', clsOrd},
@@ -1595,6 +1602,41 @@ var symbols = map[string]sym{
 	"_": {'_', clsOrd}, "$": {'$', clsOrd},
 	// mathtools relation-punctuation seen in the corpus
 	"vcentcolon": {'∶', clsRel}, "dblcolon": {'∷', clsRel},
+	// upgreek: the UPRIGHT Greek alphabet, one \DeclareMathSymbol per name in
+	// upgreek.sty. Each takes the same character as its italic counterpart above —
+	// this table already keys \mu on U+03BC, the upright codepoint, so \upmu is the
+	// same rune and the face decides. Added as a family: a paper that writes \upmu
+	// writes \upsigma on the next line, and an unknown one drops the whole formula.
+	"upalpha": {'α', clsOrd}, "upbeta": {'β', clsOrd}, "upchi": {'χ', clsOrd}, "updelta": {'δ', clsOrd},
+	"upepsilon": {'ϵ', clsOrd}, "upeta": {'η', clsOrd}, "upgamma": {'γ', clsOrd}, "upiota": {'ι', clsOrd},
+	"upkappa": {'κ', clsOrd}, "uplambda": {'λ', clsOrd}, "upmu": {'μ', clsOrd}, "upnu": {'ν', clsOrd},
+	"upomega": {'ω', clsOrd}, "upphi": {'ϕ', clsOrd}, "uppi": {'π', clsOrd}, "uppsi": {'ψ', clsOrd},
+	"uprho": {'ρ', clsOrd}, "upsigma": {'σ', clsOrd}, "uptau": {'τ', clsOrd}, "uptheta": {'θ', clsOrd},
+	"upupsilon": {'υ', clsOrd}, "upvarepsilon": {'ε', clsOrd}, "upvarphi": {'φ', clsOrd}, "upvarpi": {'ϖ', clsOrd},
+	"upvartheta": {'ϑ', clsOrd}, "upxi": {'ξ', clsOrd}, "upzeta": {'ζ', clsOrd},
+	"Updelta": {'Δ', clsOrd}, "Upgamma": {'Γ', clsOrd}, "Uplambda": {'Λ', clsOrd}, "Upomega": {'Ω', clsOrd},
+	"Upphi": {'Φ', clsOrd}, "Uppi": {'Π', clsOrd}, "Uppsi": {'Ψ', clsOrd}, "Upsigma": {'Σ', clsOrd},
+	"Uptheta": {'Θ', clsOrd}, "Upupsilon": {'Υ', clsOrd}, "Upxi": {'Ξ', clsOrd},
+	// amssymb / wasysym / fontmath ordinaries and relations the corpus drops on.
+	// Codepoints read from unicode-math-table.tex and confirmed against
+	// UnicodeData.txt, not from the AMS font slot, which is an encoding not a
+	// character:
+	//   U+2713 CHECK MARK                 \checkmark      amssymb AMSa "58
+	//   U+21E2 RIGHTWARDS DASHED ARROW    \dashrightarrow unicode-math \rightdasharrow
+	//   U+22E1 DOES NOT SUCCEED OR EQUAL  \nsucceq        amssymb AMSb "0F
+	//   U+00A7 SECTION SIGN               \mathsection    fontmath.ltx
+	//   U+2394                            \hexagon        wasysym
+	"checkmark": {'✓', clsOrd}, "mathsection": {'§', clsOrd},
+	"dashrightarrow": {'⇢', clsRel}, "nsucceq": {'⋡', clsRel},
+	"hexagon": {'\u2394', clsOrd},
+	// \varTheta is amsmath's, and it is NOT U+03F4: amsmath.sty:388 declares it at
+	// cmmi slot "02, the same slot \Theta occupies in the letters family, so it is
+	// the ITALIC capital theta — the upright U+03F4 "greek capital theta symbol"
+	// would be a different letter.
+	"varTheta": {'Θ', clsOrd},
+	// \mathellipsis is not a glyph at all: fontmath.ltx:512 defines it as
+	// \mathinner{\ldotp\ldotp\ldotp}, so it sets exactly as \ldots.
+	"mathellipsis": {'…', clsOrd},
 	// dotless letters and angle ordinaries (amssymb) seen in the corpus
 	"imath": {'ı', clsOrd}, "jmath": {'ȷ', clsOrd},
 	"measuredangle": {'∡', clsOrd}, "sphericalangle": {'∢', clsOrd},
