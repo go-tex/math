@@ -1208,8 +1208,27 @@ func (e *engine) finishEnv(info envInfo, rows [][]*box, aligns []colAlign, vrule
 	// inside each cell.
 	case kindSmall:
 		ex := exAt(float64(sty.px))
-		return e.gridLayout(rows, gridOpts{colGap: p * 0.6,
+		// Both horizontal quantities are mu, and mu is 1/18 of the OUTER size, not
+		// of the script size the cells are set in — the template's \thickspace and
+		// the two \, sit outside the $\m@th\scriptstyle##$ that each cell is.
+		// Measured: the gap is 2.7770 and 5/18 x 10 = 2.7778, where 5/18 x 7 would
+		// be 1.9444. See #31.
+		mu := float64(sty.px) / 18
+		grid := e.gridLayout(rows, gridOpts{colGap: 5 * mu,
 			lead: glueLeading{baselineskip: 6 * ex, lineskip: 1.5 * ex, lineskiplimit: 1.5 * ex}}, sty)
+		// The environment is an ORD atom on both sides, measured rather than recalled:
+		// \ht+\dp is not the witness here, the WIDTH of a neighbourhood is. With
+		// \rule{1pt}{1pt} cells, tectonic gives 4.3332 for the environment alone and
+		// 5.3332 with a rule set against it on either side — the rule's own 1.0000 and
+		// nothing more, so no inter-atom space is inserted at either edge.
+		//
+		// gridLayout returns clsInner, which is right for a \left…\right subformula
+		// and wrong here: \vcenter is an Ord for spacing purposes, and hlist would
+		// otherwise charge thin space between each \, and the grid.
+		grid.cls = clsOrd
+		// \null\, before and \, after (amsmath.sty:1045 and :1052). \null is
+		// empty and zero-wide, so what reaches the page is 3mu on each side.
+		return e.hlist([]*box{e.kern(3 * mu), grid, e.kern(3 * mu)}, sty)
 	default: // matrix family
 		grid := e.gridLayout(rows, gridOpts{colGap: p * 0.6,
 			lead: strutLeading{baselineskip: bl(p), stretch: info.stretch}}, sty)
