@@ -66,10 +66,10 @@ func TestRowsStackOnStrutsWithNoInterlineGlue(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			if v := envTotal(t, r, c.one); math.Abs(v-c.wantOne) > 0.05 {
-				t.Errorf("une rangée = %.3f, attendu %.2f", v, c.wantOne)
+				t.Errorf("one row = %.3f, want %.2f", v, c.wantOne)
 			}
 			if v := envTotal(t, r, c.three); math.Abs(v-c.wantThree) > 0.05 {
-				t.Errorf("trois rangées = %.3f, attendu %.2f", v, c.wantThree)
+				t.Errorf("three rows = %.3f, want %.2f", v, c.wantThree)
 			}
 		})
 	}
@@ -103,15 +103,15 @@ func TestTheStretchedEnvironmentTracksItsStrutLinearly(t *testing.T) {
 	// leading, the model this replaced).
 	three := envTotal(t, r, `\begin{cases}x & y\\x & y\\x & y\end{cases}`)
 	if math.Abs(three-43.20) > 0.05 {
-		t.Errorf("cases trois rangées = %.3f, tectonic donne 43.20 (= 3 x 14.40); "+
-			"36.00 voudrait dire que le stretch est ignoré, et 45.20 est ce que "+
-			"produit le modèle §679 contre un interligne de 12pt — mesuré en le "+
-			"remettant, pas calculé", three)
+		t.Errorf("cases three rows = %.3f, tectonic gives 43.20 (= 3 x 14.40); "+
+			"36.00 would mean the stretch is ignored, and 45.20 is what the §679 "+
+			"model produces against a 12pt leading - measured by putting it back, "+
+			"not calculated", three)
 	}
 	// And the unstretched control, so this is a statement about the stretch and not
 	// about matrices in general.
 	if v := envTotal(t, r, `\begin{pmatrix}x\\x\\x\end{pmatrix}`); math.Abs(v-36) > 0.05 {
-		t.Errorf("pmatrix trois rangées = %.3f, tectonic donne 36.00", v)
+		t.Errorf("pmatrix three rows = %.3f, tectonic gives 36.00", v)
 	}
 }
 
@@ -122,9 +122,9 @@ func TestATallRowTakesItsOwnHeight(t *testing.T) {
 	base := envTotal(t, r, `\begin{pmatrix}x\\x\end{pmatrix}`)
 	flat := envTotal(t, r, `\begin{pmatrix}x\\x\\x\end{pmatrix}`) - base
 	tall := envTotal(t, r, `\begin{pmatrix}x\\x\\\frac{\frac{a}{b}}{c}\end{pmatrix}`) - base
-	t.Logf("rangée ajoutée: plate %.3f, haute %.3f (tectonic: 12.00 et 13.95)", flat, tall)
+	t.Logf("row added: flat %.3f, tall %.3f (tectonic: 12.00 and 13.95)", flat, tall)
 	if math.Abs(flat-12) > 0.05 {
-		t.Errorf("rangée plate ajoutée = %.3f, tectonic donne 12.00", flat)
+		t.Errorf("flat row added = %.3f, tectonic gives 12.00", flat)
 	}
 	// Bounded against the reference's own opening, 13.95-12.00, rather than a round
 	// number: we open by 2.20 against its 1.95, a 0.25pt residual on the fraction's
@@ -132,7 +132,7 @@ func TestATallRowTakesItsOwnHeight(t *testing.T) {
 	// refuses the old behaviour, which opened by 16.74-9.58 = 7.16.
 	const refOpening = 13.95 - 12.00
 	if d := (tall - flat) - refOpening; d > 0.4 || d < -0.4 {
-		t.Errorf("une rangée haute ouvre le pas de %.3f, tectonic de %.2f (écart %+.3f)",
+		t.Errorf("a tall row opens the pitch by %.3f, tectonic by %.2f (difference %+.3f)",
 			tall-flat, refOpening, d)
 	}
 }
@@ -167,12 +167,12 @@ func TestCasesOneRowIsFlooredByItsBrace(t *testing.T) {
 	const rows = 14.40
 	full := envTotal(t, r, `\begin{cases}x & y\end{cases}`)
 	if full <= rows {
-		t.Errorf("l'accolade n'élève pas le total: %.3f contre %.2f pour les rangées seules",
+		t.Errorf("the brace does not raise the total: %.3f against %.2f for the rows alone",
 			full, rows)
 	}
 	if math.Abs(full-16.67) > 0.05 {
-		t.Errorf("cases une rangée = %.3f, cet état vaut 16.67 (tectonic 18.00) — "+
-			"si c'est voulu, mettre à jour ici ET le tableau au-dessus", full)
+		t.Errorf("cases one row = %.3f, this state is 16.67 (tectonic 18.00) - "+
+			"if that is intended, update here AND the table above", full)
 	}
 }
 

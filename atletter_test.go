@@ -18,9 +18,9 @@ func TestControlWordsKeepTheirAt(t *testing.T) {
 		{`\the@inst`, []string{"the@inst"}},
 		{`\@ifundefined`, []string{"@ifundefined"}},
 		{`\@@affmark`, []string{"@@affmark"}},
-		{`\@ x`, []string{"@"}}, // écrit avec son espace: le nom ne déborde pas
+		{`\@ x`, []string{"@"}}, // written with its space: the name does not run on
 		{`\alpha`, []string{"alpha"}},
-		{`\{`, []string{"{"}}, // symbole de contrôle: inchangé
+		{`\{`, []string{"{"}}, // control symbol: unchanged
 	} {
 		var got []string
 		for _, tk := range tokenize(c.src) {
@@ -40,9 +40,9 @@ func TestUnknownControlWordReportsItsWholeName(t *testing.T) {
 	r := newRenderer(t)
 	_, err := r.RenderSVG(`x^{\the@inst }`, 12)
 	if err == nil {
-		t.Fatal("aucune erreur pour une commande inconnue")
+		t.Fatal("no error for an unknown command")
 	}
 	if got := err.Error(); got != `texmath: unknown command \the@inst` {
-		t.Errorf("erreur %q, want la commande entière", got)
+		t.Errorf("error %q, want the whole command", got)
 	}
 }
