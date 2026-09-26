@@ -280,3 +280,59 @@ func TestSmallmatrixResidualIsTheFaceNotTheGrid(t *testing.T) {
 		t.Errorf("x at script size = %.4f, this state is 3.4230 (tectonic 3.0138)", T)
 	}
 }
+
+// smallmatrix's HORIZONTAL spacing is stated in mu, and mu is 1/18 of the OUTER
+// size — not of the script size the cells are set in. The template's \thickspace
+// and the two \, sit outside the $\m@th\scriptstyle##$ that each cell is
+// (amsmath.sty:1045-1052).
+//
+// Measured off tectonic at 10pt with `measure dimens` reading \wd, on
+// \rule{1pt}{1pt} cells so the face is not involved. R is one such rule and [S] a
+// one-cell smallmatrix:
+//
+//	subject       tectonic     before      after
+//	[S]             4.3332     1.0000     4.3333
+//	R[S]            5.3332     6.2000     5.3333   ← no space at the edge
+//	[S]R            5.3332     6.2000     5.3333
+//	R[S]R           6.3332    11.4000     6.3333
+//	two columns     8.1102     6.2000     8.1111
+//	three columns  11.8872    11.4000    11.8889
+//
+// Two defects of OPPOSITE sign were cancelling: the two \, were missing (−3.3333)
+// and every column gap was 0.6 x the cell size instead of 5mu at the outer size
+// (+1.4222 each). At three columns the net error was −0.4872, 4% of the width, and
+// it changed sign at four — a width check at one column count would have called
+// this nearly right. See #31.
+//
+// The edge rows are what fix the atom CLASS: the environment is an Ord, so no
+// inter-atom space is inserted beside it, where gridLayout's clsInner would have
+// charged thin space. \vcenter is an Ord for spacing purposes, and this is the
+// measurement that says so rather than a reading of tex.web.
+//
+// Tolerance 0.002: TeX converts mu in scaled points and truncates, so 5mu comes out
+// 2.7770 where 5/18 x 10 is 2.7778 — 0.0008 per mu-space, twice over at three
+// columns. The bound is that arithmetic and nothing looser.
+func TestSmallmatrixSpacesInMuAtTheOuterSize(t *testing.T) {
+	r := newRenderer(t)
+	const R = `\rule{1pt}{1pt}`
+	const S = `\begin{smallmatrix}` + R + `\end{smallmatrix}`
+	for _, c := range []struct {
+		tex  string
+		want float64
+	}{
+		{S, 4.3332},
+		{R + S, 5.3332},
+		{S + R, 5.3332},
+		{R + S + R, 6.3332},
+		{`\begin{smallmatrix}` + R + `&` + R + `\end{smallmatrix}`, 8.1102},
+		{`\begin{smallmatrix}` + R + `&` + R + `&` + R + `\end{smallmatrix}`, 11.8872},
+	} {
+		_, m, err := r.RenderSVGMetrics(c.tex, 10)
+		if err != nil {
+			t.Fatalf("%s: %v", c.tex, err)
+		}
+		if math.Abs(m.Width-c.want) > 0.002 {
+			t.Errorf("%s width = %.4f, tectonic gives %.4f", c.tex, m.Width, c.want)
+		}
+	}
+}

@@ -809,7 +809,12 @@ func (e *engine) parseEnv(toks []token, sty style) (*box, atomClass, bool, []tok
 			if err != nil {
 				return nil, 0, false, nil, err
 			}
-			return e.finishEnv(info, rows, aligns, vrules, csty.px, sty), clsInner, false, r, nil
+			// The class is the BOX's, not a second decision made here. Every
+			// environment but smallmatrix still yields clsInner (gridLayout and
+			// delimited both set it); smallmatrix is an Ord, measured at its edges
+			// rather than assumed — see finishEnv.
+			b := e.finishEnv(info, rows, aligns, vrules, csty.px, sty)
+			return b, b.cls, false, r, nil
 		}
 	}
 }
