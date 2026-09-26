@@ -176,24 +176,107 @@ func TestCasesOneRowIsFlooredByItsBrace(t *testing.T) {
 	}
 }
 
-// smallmatrix is untouched: script size, and it wants a smaller strut.
+// smallmatrix takes TeX's interline glue, not a strut. amsmath.sty:1045-1047 sets
+// \baselineskip6\ex@ \lineskip1.5\ex@ \lineskiplimit\lineskip and struts nothing,
+// so tex.web §679 decides each gap from the rows' own extents — a different model
+// in kind from the \array family, which is why leading.go has three types.
 //
-//	             one row   three rows
-//	tectonic        4.01        15.01
-//	here            4.71        15.17
+// Measured off tectonic at 10pt with `measure boxhd` and `measure dimens`
+// (go-tex/measure). The registers, read out of the reference's own log rather than
+// inferred: \ex@ = 1.0000, \baselineskip = 6.0000, \lineskip = \lineskiplimit =
+// 1.5000.
 //
-// Pinned to this engine's values so a change is noticed, not claimed to be right.
-func TestSmallmatrixIsNotYetOnTheGrid(t *testing.T) {
+// The subjects are \rule boxes, whose height and depth are STATED and not the
+// face's business. That matters twice over: the model is what is under test here,
+// and the residual difference on glyph content is entirely the face (see
+// TestSmallmatrixResidualIsTheFaceNotTheGrid).
+//
+//	rows of                     \ht+\dp: tectonic / here
+//	\rule{1pt}{1pt}   x2                  7.0000 / 7.0000
+//	\rule{1pt}{1pt}   x3                 13.0000 / 13.0000
+//	\rule{1pt}{4pt}   x2                 10.0000 / 10.0000    gap 2.0 ≥ limit
+//	\rule{1pt}{4.5pt} x2                 10.5000 / 10.5000    gap exactly at limit
+//	\rule{1pt}{5pt}   x2                 11.5000 / 11.5000    gap 1.0 < limit → \lineskip
+//	\rule{1pt}{10pt}  x2                 21.5000 / 21.5000    far past the limit
+//	\rule{1pt}{10pt}  x3                 33.0000 / 33.0000
+//
+// The 5pt row is the one that separates the models: a grid that always advanced by
+// \baselineskip would give 11.0000 there, and §679 gives 11.5000 because the gap
+// falls under \lineskiplimit and is replaced by \lineskip outright — the floor is
+// not a clamp to the limit but a substitution.
+func TestSmallmatrixTakesInterlineGlue(t *testing.T) {
 	r := newRenderer(t)
 	for _, c := range []struct {
 		tex  string
 		want float64
 	}{
-		{`\begin{smallmatrix}x\end{smallmatrix}`, 4.712},
-		{`\begin{smallmatrix}x\\x\\x\end{smallmatrix}`, 15.169},
+		{`\begin{smallmatrix}\rule{1pt}{1pt}\\\rule{1pt}{1pt}\end{smallmatrix}`, 7.0},
+		{`\begin{smallmatrix}\rule{1pt}{1pt}\\\rule{1pt}{1pt}\\\rule{1pt}{1pt}\end{smallmatrix}`, 13.0},
+		{`\begin{smallmatrix}\rule{1pt}{4pt}\\\rule{1pt}{4pt}\end{smallmatrix}`, 10.0},
+		{`\begin{smallmatrix}\rule{1pt}{4.5pt}\\\rule{1pt}{4.5pt}\end{smallmatrix}`, 10.5},
+		{`\begin{smallmatrix}\rule{1pt}{5pt}\\\rule{1pt}{5pt}\end{smallmatrix}`, 11.5},
+		{`\begin{smallmatrix}\rule{1pt}{10pt}\\\rule{1pt}{10pt}\end{smallmatrix}`, 21.5},
+		{`\begin{smallmatrix}\rule{1pt}{10pt}\\\rule{1pt}{10pt}\\\rule{1pt}{10pt}\end{smallmatrix}`, 33.0},
 	} {
-		if v := envTotal(t, r, c.tex); math.Abs(v-c.want) > 0.05 {
-			t.Errorf("%s = %.3f, cet état vaut %.3f", c.tex, v, c.want)
+		if v := envTotal(t, r, c.tex); math.Abs(v-c.want) > 0.01 {
+			t.Errorf("%s = %.4f, tectonic gives %.4f", c.tex, v, c.want)
 		}
+	}
+}
+
+// TestSmallmatrixPitchIsSixExAt states the property, not one operating point: the
+// pitch of rows that fit inside the leading IS \baselineskip = 6\ex@, whatever the
+// rows are. A table of totals can be reproduced by a wrong model that happens to
+// agree there — which is exactly what happened to the \array grid (#26, #28) — so
+// the pitch is asserted on three different row heights that all take the same
+// branch.
+func TestSmallmatrixPitchIsSixExAt(t *testing.T) {
+	r := newRenderer(t)
+	const want = 6.0 // 6\ex@ at 10pt, \ex@ = 1.0000 measured
+	for _, row := range []string{`\rule{1pt}{1pt}`, `\rule{1pt}{2pt}`, `\rule{1pt}{4pt}`} {
+		two := envTotal(t, r, `\begin{smallmatrix}`+row+`\\`+row+`\end{smallmatrix}`)
+		three := envTotal(t, r, `\begin{smallmatrix}`+row+`\\`+row+`\\`+row+`\end{smallmatrix}`)
+		if p := three - two; math.Abs(p-want) > 0.01 {
+			t.Errorf("rows of %s: pitch %.4f, 6\\ex@ is %.4f", row, p, want)
+		}
+	}
+}
+
+// TestSmallmatrixResidualIsTheFaceNotTheGrid separates what this grid fixed from
+// what it did not, so neither is mistaken for the other later.
+//
+// On glyph content the totals still differ from the reference, and the whole
+// difference is the FACE's MATH table, not the vertical model:
+//
+//	                      tectonic    here
+//	math axis at 10pt       2.5000  3.0000   \fontdimen22 vs MATH AxisHeight
+//	script size at 10pt          7       7   identical, so not the cause
+//	x at script size        3.0138  3.4230   the face's x-height
+//
+// The axis shifts height against depth and leaves the TOTAL alone, which is why
+// every \rule measurement above is exact while \begin{smallmatrix}x\end{smallmatrix}
+// is not. Pinned so a change in either is noticed; neither is claimed to be right.
+func TestSmallmatrixResidualIsTheFaceNotTheGrid(t *testing.T) {
+	r := newRenderer(t)
+	e := &engine{font: r.font, upem: float64(r.font.UnitsPerEm()), gc: r.gc}
+	if got := e.axis(10); math.Abs(got-3.0) > 0.001 {
+		t.Errorf("axis = %.4f, this state is 3.0000 (tectonic 2.5000)", got)
+	}
+	// The script size is the half of this that does NOT differ. Asserting it keeps
+	// the attribution honest: if it ever drifts, the glyph residual below stops
+	// being about the x-height alone.
+	if got := e.scriptSize(10); got != 7 {
+		t.Errorf("script size = %d, tectonic uses 7", got)
+	}
+	// h = T/2 + axe for a \vcenter, so T = 2(h - axe) recovers the row's own extent
+	// from a total whose depth the leading \null clamps at zero — in the reference
+	// AND here, which is why the one-row totals are compared this way and not
+	// directly.
+	_, m, err := r.RenderSVGMetrics(`\begin{smallmatrix}x\end{smallmatrix}`, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if T := 2 * (m.Height - e.axis(10)); math.Abs(T-3.4230) > 0.01 {
+		t.Errorf("x at script size = %.4f, this state is 3.4230 (tectonic 3.0138)", T)
 	}
 }

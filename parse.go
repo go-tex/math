@@ -691,7 +691,7 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 			}
 			rest = rest[1:] // consume \\
 		}
-		return e.gridLayout(rows, gridOpts{rowGap: float64(ssty.px) * 0.18}, ssty), clsOrd, false, rest, nil
+		return e.gridLayout(rows, gridOpts{lead: flatLeading{rowGap: float64(ssty.px) * 0.18}}, ssty), clsOrd, false, rest, nil
 	case "not":
 		// \not X overlays a negation slash on the following atom (e.g. \not= ⇒ ≠,
 		// \not\subset ⇒ ⊄), keeping that atom's class.
