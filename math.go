@@ -973,24 +973,13 @@ type gridOpts struct {
 	aligns []colAlign // per-column alignment; short/nil → remaining cols centred
 	gaps   []float64  // per-column right gap (len ncol-1); nil → uniform colGap
 	colGap float64    // uniform inter-column gap (also the edge margin for vrules)
-	rowGap float64    // inter-row gap, when baselineskip is 0 (see gridLayout)
 	vrules []int      // gap indices 0..ncol at which to draw a vertical rule
-	// baselineskip, when non-zero, replaces rowGap with TeX's baseline grid: every
-	// row is strutted to .7/.3 of it and consecutive baselines sit it apart. The
-	// two models differ in KIND, not by a constant — see gridLayout.
-	baselineskip float64
-	// lineskip is no longer consulted: the rows butt and the struts set the pitch.
-	// Kept out of gridOpts rather than left as a field nothing reads.
-	// jot is added to the PITCH and not to the strut. \openup\jot, which amsmath
-	// applies to aligned and gathered, raises \baselineskip; \strutbox is untouched
-	// by it. Deriving the strut from baselineskip+jot instead put a SINGLE row of
-	// aligned at 15.00pt where the reference gives 12.00 — the pitch was right and
-	// the one-row case was not, which is why both are measured.
-	jot float64
-	// stretch is \arraystretch: it scales the row STRUT and nothing else
-	// (latex.ltx:12103 builds \@arstrutbox from \arraystretch\ht\strutbox). Zero
-	// means 1.0. amsmath sets 1.2 for cases and for nothing else.
-	stretch float64
+	// lead is the VERTICAL model: which strut every row gets and what goes between
+	// them. It is an interface and not a set of numbers because the three models
+	// differ in kind and one of them shipped in place of another — see leading.go.
+	// A nil lead butts the rows with no strut, which is what a grid of one row wants
+	// and the only case where the model does not matter.
+	lead leading
 }
 
 // gridLayout lays rows/cols on a grid centred on the math axis, with per-column
@@ -1045,12 +1034,8 @@ func (e *engine) gridLayout(rows [][]*box, o gridOpts, sty style) *box {
 	//	tall (\frac{\frac{a}{b}}{c})    13.95         16.74   too loose
 	//
 	// Raising rowGap to fix the first makes the second worse. See go-tex/math#25.
-	if o.baselineskip > 0 {
-		st := o.stretch
-		if st <= 0 {
-			st = 1
-		}
-		sh, sd := st*0.7*o.baselineskip, st*0.3*o.baselineskip
+	if o.lead != nil {
+		sh, sd := o.lead.strut()
 		for i := range rows {
 			if rowH[i] < sh {
 				rowH[i] = sh
@@ -1060,36 +1045,18 @@ func (e *engine) gridLayout(rows [][]*box, o gridOpts, sty style) *box {
 			}
 		}
 	}
-	// rowSep[i] separates row i from row i+1. With a baselineskip it is whatever
-	// puts the next baseline there; without one it is the flat rowGap, which is
-	// still what aligned, gathered and smallmatrix use — each wants its own
-	// measurement (aligned and gathered add \jot on top of the pitch, smallmatrix
-	// is script size and takes a smaller strut).
+	// rowSep[i] separates row i from row i+1, and the model decides what that is:
+	// \jot for the strutted grid (the struts already carry the pitch), TeX's §679
+	// interline glue for smallmatrix, a flat gap where no reference measurement has
+	// been made. The struts above are applied FIRST, because §679 reads the extents
+	// it is given and the strutted model has none to read.
 	rowSep := make([]float64, 0, len(rows))
 	for i := 0; i+1 < len(rows); i++ {
-		if o.baselineskip <= 0 {
-			rowSep = append(rowSep, o.rowGap)
+		if o.lead == nil {
+			rowSep = append(rowSep, 0)
 			continue
 		}
-		// The rows BUTT: the struts provide the pitch and there is no interline glue
-		// between them, so the pitch is rowD[i]+rowH[i+1] and comes out at the strut
-		// total exactly. \jot, where the environment has one, is the only addition.
-		//
-		// ⚠ This is not what the first version computed. It used §679 against
-		// \baselineskip — d = bl - rowD - rowH, floored at \lineskip — which gives
-		// the SAME answer whenever the strut exactly fills the leading, i.e. at
-		// \arraystretch 1. Every test fixed the stretch at 1, so the two models were
-		// indistinguishable and the wrong one looked exact. Measuring the reference
-		// with \arraystretch varied separates them:
-		//
-		//	\arraystretch   1 row    pitch     §679 model would give
-		//	1.0             12.00    12.00     12.00   agrees
-		//	1.2             14.40    14.40     15.40   d<0 so \lineskip, wrong
-		//	1.5             18.00    18.00     19.00   wrong
-		//
-		// The pitch tracks \arraystretch linearly, which is the strut and nothing
-		// else. (latex.ltx's \@array hands the row spacing entirely to \@arstrut.)
-		rowSep = append(rowSep, o.jot)
+		rowSep = append(rowSep, o.lead.gap(rowD[i], rowH[i+1]))
 	}
 	totalH := 0.0
 	for i := range rows {
@@ -1224,22 +1191,32 @@ func (e *engine) finishEnv(info envInfo, rows [][]*box, aligns []colAlign, vrule
 	switch info.kind {
 	case kindArray:
 		return e.gridLayout(rows, gridOpts{aligns: aligns, colGap: p * 0.5,
-			baselineskip: bl(p), vrules: vrules}, sty)
+			lead: strutLeading{baselineskip: bl(p)}, vrules: vrules}, sty)
 	// aligned and gathered take the same grid PLUS \jot: amsmath's \openup\jotlet
 	// opens every row of a multi-line display by \jot, 3pt at 10pt (amsmath.sty,
 	// \jot is 3pt in plain TeX). Measured against tectonic, both want one row of
 	// 12.00pt — the plain strut — and a pitch of 15.00pt, which is 12 + 3 exactly.
 	case kindAligned:
 		return e.gridLayout(rows, gridOpts{aligns: alignedAligns(ncol), gaps: alignedGaps(ncol, cellPx),
-			colGap: p * 0.5, baselineskip: bl(p), jot: jot(p)}, sty)
+			colGap: p * 0.5, lead: strutLeading{baselineskip: bl(p), jot: jot(p)}}, sty)
 	case kindGathered:
 		return e.gridLayout(rows, gridOpts{colGap: p * 0.6,
-			baselineskip: bl(p), jot: jot(p)}, sty)
+			lead: strutLeading{baselineskip: bl(p), jot: jot(p)}}, sty)
+	// smallmatrix is the one environment here with NO strut: it sets its own
+	// leading in \ex@ and takes §679 interline glue (amsmath.sty:1045-1047,
+	// \baselineskip6\ex@ \lineskip1.5\ex@ \lineskiplimit\lineskip).
+	//
+	// \ex@ is computed at the size in force where the environment opens — the
+	// OUTER size, sty.px — and not at the script size its cells are set in: the
+	// three \ex@ assignments run before \ialign, and \scriptstyle applies only
+	// inside each cell.
 	case kindSmall:
-		return e.gridLayout(rows, gridOpts{colGap: p * 0.6, rowGap: p * 0.35}, sty)
+		ex := exAt(float64(sty.px))
+		return e.gridLayout(rows, gridOpts{colGap: p * 0.6,
+			lead: glueLeading{baselineskip: 6 * ex, lineskip: 1.5 * ex, lineskiplimit: 1.5 * ex}}, sty)
 	default: // matrix family
 		grid := e.gridLayout(rows, gridOpts{colGap: p * 0.6,
-			baselineskip: bl(p), stretch: info.stretch}, sty)
+			lead: strutLeading{baselineskip: bl(p), stretch: info.stretch}}, sty)
 		if info.open == 0 && info.close == 0 {
 			return grid
 		}
