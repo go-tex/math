@@ -1458,21 +1458,28 @@ const (
 type envInfo struct {
 	kind        envKind
 	open, close rune // outer delimiters (kindMatrix only)
+	// stretch is \arraystretch, which scales the row strut. amsmath sets it for
+	// cases and nothing else: amsmath.sty:1106 is
+	// \left\lbrace \def\arraystretch{1.2} \array{@{}l@{\quad}l@{}}.
+	// Zero means 1.0.
+	stretch float64
 }
 
+// Named fields, not positional: adding stretch to envInfo broke all twelve of
+// these literals at once, which is a cost every future field would pay again.
 var envTable = map[string]envInfo{
-	"matrix":      {kindMatrix, 0, 0},
-	"pmatrix":     {kindMatrix, '(', ')'},
-	"bmatrix":     {kindMatrix, '[', ']'},
-	"Bmatrix":     {kindMatrix, '{', '}'},
-	"vmatrix":     {kindMatrix, '|', '|'},
-	"Vmatrix":     {kindMatrix, '‖', '‖'},
-	"cases":       {kindMatrix, '{', 0},
-	"array":       {kindArray, 0, 0},
-	"aligned":     {kindAligned, 0, 0},
-	"split":       {kindAligned, 0, 0},
-	"gathered":    {kindGathered, 0, 0},
-	"smallmatrix": {kindSmall, 0, 0},
+	"matrix":      {kind: kindMatrix},
+	"pmatrix":     {kind: kindMatrix, open: '(', close: ')'},
+	"bmatrix":     {kind: kindMatrix, open: '[', close: ']'},
+	"Bmatrix":     {kind: kindMatrix, open: '{', close: '}'},
+	"vmatrix":     {kind: kindMatrix, open: '|', close: '|'},
+	"Vmatrix":     {kind: kindMatrix, open: '‖', close: '‖'},
+	"cases":       {kind: kindMatrix, open: '{', stretch: 1.2},
+	"array":       {kind: kindArray},
+	"aligned":     {kind: kindAligned},
+	"split":       {kind: kindAligned},
+	"gathered":    {kind: kindGathered},
+	"smallmatrix": {kind: kindSmall},
 }
 
 // symbols maps a control-sequence name to its glyph and atom class.
