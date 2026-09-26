@@ -973,8 +973,19 @@ type gridOpts struct {
 	aligns []colAlign // per-column alignment; short/nil → remaining cols centred
 	gaps   []float64  // per-column right gap (len ncol-1); nil → uniform colGap
 	colGap float64    // uniform inter-column gap (also the edge margin for vrules)
-	rowGap float64    // inter-row gap
+	rowGap float64    // inter-row gap, when baselineskip is 0 (see gridLayout)
 	vrules []int      // gap indices 0..ncol at which to draw a vertical rule
+	// baselineskip, when non-zero, replaces rowGap with TeX's baseline grid: every
+	// row is strutted to .7/.3 of it and consecutive baselines sit it apart. The
+	// two models differ in KIND, not by a constant — see gridLayout.
+	baselineskip float64
+	lineskip     float64 // the floor when a tall row would overlap (tex.web §679)
+	// jot is added to the PITCH and not to the strut. \openup\jot, which amsmath
+	// applies to aligned and gathered, raises \baselineskip; \strutbox is untouched
+	// by it. Deriving the strut from baselineskip+jot instead put a SINGLE row of
+	// aligned at 15.00pt where the reference gives 12.00 — the pitch was right and
+	// the one-row case was not, which is why both are measured.
+	jot float64
 }
 
 // gridLayout lays rows/cols on a grid centred on the math axis, with per-column
@@ -1015,11 +1026,53 @@ func (e *engine) gridLayout(rows [][]*box, o gridOpts, sty style) *box {
 			}
 		}
 	}
+	// TeX's vertical model for anything built on \array, which is every matrix and
+	// cases: \@arstrut puts a rule of .7\baselineskip by .3\baselineskip in every
+	// row (latex.ltx:12103) and the rows then stack on a baseline grid, so the pitch
+	// has a FLOOR of \baselineskip and opens up only for a row that exceeds it.
+	//
+	// A gap proportional to the point size cannot reproduce that, and the reason is
+	// that the error changes SIGN. Measured against tectonic at 10pt, \ht+\dp of a
+	// pmatrix when a third row is added to two rows of x:
+	//
+	//	added row                    tectonic   with rowGap=p*0.4
+	//	flat (x)                       12.00          9.58   too tight
+	//	tall (\frac{\frac{a}{b}}{c})    13.95         16.74   too loose
+	//
+	// Raising rowGap to fix the first makes the second worse. See go-tex/math#25.
+	if o.baselineskip > 0 {
+		sh, sd := 0.7*o.baselineskip, 0.3*o.baselineskip
+		for i := range rows {
+			if rowH[i] < sh {
+				rowH[i] = sh
+			}
+			if rowD[i] < sd {
+				rowD[i] = sd
+			}
+		}
+	}
+	// rowSep[i] separates row i from row i+1. With a baselineskip it is whatever
+	// puts the next baseline there; without one it is the flat rowGap, which is
+	// still what aligned, gathered and smallmatrix use — each wants its own
+	// measurement (aligned and gathered add \jot on top of the pitch, smallmatrix
+	// is script size and takes a smaller strut).
+	rowSep := make([]float64, 0, len(rows))
+	for i := 0; i+1 < len(rows); i++ {
+		if o.baselineskip <= 0 {
+			rowSep = append(rowSep, o.rowGap)
+			continue
+		}
+		g := o.baselineskip + o.jot - rowD[i] - rowH[i+1]
+		if g < 0 {
+			g = o.lineskip
+		}
+		rowSep = append(rowSep, g)
+	}
 	totalH := 0.0
 	for i := range rows {
 		totalH += rowH[i] + rowD[i]
 		if i > 0 {
-			totalH += o.rowGap
+			totalH += rowSep[i-1]
 		}
 	}
 	// vertical-rule bookkeeping and left margin.
@@ -1081,7 +1134,10 @@ func (e *engine) gridLayout(rows [][]*box, o gridOpts, sty style) *box {
 				place(grid, r[j], colStart[j]+off, y)
 			}
 		}
-		y += rowD[i] + o.rowGap
+		y += rowD[i]
+		if i+1 < len(rows) {
+			y += rowSep[i]
+		}
 	}
 	gw := rightEnd
 	if hasRule(ncol) {
@@ -1122,6 +1178,18 @@ func alignedGaps(ncol, px int) []float64 {
 }
 
 // finishEnv lays out a parsed environment's rows according to its kind.
+// bl is \baselineskip for cells set at p pixels, and ls is \lineskip. This library
+// is handed a size and not a leading, so the ratio LaTeX's own size files state for
+// \normalsize is used: size10.clo sets \@setfontsize\normalsize\@xpt{12}, i.e.
+// 1.2, and \lineskip is 1pt at 10pt. A matrix inside a \footnotesize block has a
+// smaller leading than this assumes; correcting that needs the caller to pass one.
+func bl(p float64) float64 { return 1.2 * p }
+func ls(p float64) float64 { return 0.1 * p }
+
+// jot is \jot, the extra leading \openup puts between the rows of a multi-line
+// display: 3pt at 10pt (plain TeX's \jot=3pt, used by amsmath's aligned/gathered).
+func jot(p float64) float64 { return 0.3 * p }
+
 // cellPx is the pixel size cells were typeset at (script size for smallmatrix).
 func (e *engine) finishEnv(info envInfo, rows [][]*box, aligns []colAlign, vrules []int, cellPx int, sty style) *box {
 	ncol := 0
@@ -1133,15 +1201,23 @@ func (e *engine) finishEnv(info envInfo, rows [][]*box, aligns []colAlign, vrule
 	p := float64(cellPx)
 	switch info.kind {
 	case kindArray:
-		return e.gridLayout(rows, gridOpts{aligns: aligns, colGap: p * 0.5, rowGap: p * 0.4, vrules: vrules}, sty)
+		return e.gridLayout(rows, gridOpts{aligns: aligns, colGap: p * 0.5,
+			baselineskip: bl(p), lineskip: ls(p), vrules: vrules}, sty)
+	// aligned and gathered take the same grid PLUS \jot: amsmath's \openup\jotlet
+	// opens every row of a multi-line display by \jot, 3pt at 10pt (amsmath.sty,
+	// \jot is 3pt in plain TeX). Measured against tectonic, both want one row of
+	// 12.00pt — the plain strut — and a pitch of 15.00pt, which is 12 + 3 exactly.
 	case kindAligned:
-		return e.gridLayout(rows, gridOpts{aligns: alignedAligns(ncol), gaps: alignedGaps(ncol, cellPx), colGap: p * 0.5, rowGap: p * 0.5}, sty)
+		return e.gridLayout(rows, gridOpts{aligns: alignedAligns(ncol), gaps: alignedGaps(ncol, cellPx),
+			colGap: p * 0.5, baselineskip: bl(p), jot: jot(p), lineskip: ls(p)}, sty)
 	case kindGathered:
-		return e.gridLayout(rows, gridOpts{colGap: p * 0.6, rowGap: p * 0.5}, sty)
+		return e.gridLayout(rows, gridOpts{colGap: p * 0.6,
+			baselineskip: bl(p), jot: jot(p), lineskip: ls(p)}, sty)
 	case kindSmall:
 		return e.gridLayout(rows, gridOpts{colGap: p * 0.6, rowGap: p * 0.35}, sty)
 	default: // matrix family
-		grid := e.gridLayout(rows, gridOpts{colGap: p * 0.6, rowGap: p * 0.4}, sty)
+		grid := e.gridLayout(rows, gridOpts{colGap: p * 0.6,
+			baselineskip: bl(p), lineskip: ls(p)}, sty)
 		if info.open == 0 && info.close == 0 {
 			return grid
 		}
