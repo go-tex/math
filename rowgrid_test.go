@@ -117,10 +117,29 @@ func TestATallRowOpensThePitchAndNoMore(t *testing.T) {
 //	smallmatrix      4.01    4.71         5.50    5.23
 //
 // cases moved from 9.33/10.84 to 12.00/12.00 — closer in both columns, exact in
-// neither. Its 18.00 one-row total is NOT the brace: \left\{ x \right. measures
-// 10.00pt, the same as \left( x \right), so the extra height is in the rows and
-// amsmath's \arraystretch{1.2} would give 14.4 rather than 18. Hypothesis tested
-// and refuted; the cause is not established.
+// neither. Its one-row total of 18.00 is now fully decomposed, and the first
+// version of this comment got it wrong (it said "NOT the brace"):
+//
+//	array, plain                                12.00   the strut
+//	array with \arraystretch{1.2}               14.40   = 1.2 x 12.00
+//	  plus \left\lbrace                         18.00   = 14.40 + 3.60
+//	cases itself                                18.00   h=11.50 d=6.50, identical
+//
+// amsmath:1106 is \left\lbrace \def\arraystretch{1.2} \array{@{}l@{\quad}l@{}},
+// and rebuilding exactly that reproduces cases to the last digit including the
+// height/depth split. So the brace contributes 3.60 of the 6.00 and \arraystretch
+// the other 2.40.
+//
+// ⚠ The refutation that produced the old comment tested \left\{ x \right. — a
+// TINY content, where the brace measures 10.00pt exactly as \left( x \right) does
+// — and generalised from it. A \left delimiter grows with what it spans
+// (\delimiterfactor, \delimitershortfall), so the one operating point where it is
+// smallest says nothing about the one that matters. Test a hypothesis where the
+// quantity is LARGE.
+//
+// The pitch of 12.60 is still unexplained: \arraystretch{1.2} on a strut of
+// 10.08/4.32 does not give it under §679 with \baselineskip 12 (that would be
+// 15.40), so something else sets the leading inside \array. Not guessed at here.
 //
 // smallmatrix is untouched: it is set at script size and wants a smaller strut.
 func TestCasesAndSmallmatrixAreNotYetOnTheGrid(t *testing.T) {
