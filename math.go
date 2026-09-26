@@ -977,8 +977,10 @@ type gridOpts struct {
 	// lead is the VERTICAL model: which strut every row gets and what goes between
 	// them. It is an interface and not a set of numbers because the three models
 	// differ in kind and one of them shipped in place of another — see leading.go.
-	// A nil lead butts the rows with no strut, which is what a grid of one row wants
-	// and the only case where the model does not matter.
+	//
+	// It is REQUIRED. There is no nil default: a grid whose leading was not chosen
+	// is the defect this type exists to prevent, and a fallback would let a call
+	// site forget to choose and still render.
 	lead leading
 }
 
@@ -1034,15 +1036,13 @@ func (e *engine) gridLayout(rows [][]*box, o gridOpts, sty style) *box {
 	//	tall (\frac{\frac{a}{b}}{c})    13.95         16.74   too loose
 	//
 	// Raising rowGap to fix the first makes the second worse. See go-tex/math#25.
-	if o.lead != nil {
-		sh, sd := o.lead.strut()
-		for i := range rows {
-			if rowH[i] < sh {
-				rowH[i] = sh
-			}
-			if rowD[i] < sd {
-				rowD[i] = sd
-			}
+	sh, sd := o.lead.strut()
+	for i := range rows {
+		if rowH[i] < sh {
+			rowH[i] = sh
+		}
+		if rowD[i] < sd {
+			rowD[i] = sd
 		}
 	}
 	// rowSep[i] separates row i from row i+1, and the model decides what that is:
@@ -1052,10 +1052,6 @@ func (e *engine) gridLayout(rows [][]*box, o gridOpts, sty style) *box {
 	// it is given and the strutted model has none to read.
 	rowSep := make([]float64, 0, len(rows))
 	for i := 0; i+1 < len(rows); i++ {
-		if o.lead == nil {
-			rowSep = append(rowSep, 0)
-			continue
-		}
 		rowSep = append(rowSep, o.lead.gap(rowD[i], rowH[i+1]))
 	}
 	totalH := 0.0

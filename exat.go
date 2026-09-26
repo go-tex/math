@@ -16,13 +16,10 @@ package math
 // off tectonic.
 func exAt(p float64) float64 {
 	const pt = 1 << 16 // scaled points per point
-	sp := func(v float64) int64 {
-		if v >= 0 {
-			return int64(v*pt + 0.5)
-		}
-		return -int64(-v*pt + 0.5)
-	}
-	d := -sp(p)
+	// A font size is positive, so this rounds one way only. A signed helper would
+	// be a branch no caller can reach, and a test written to cover it would assert
+	// a state the code does not admit.
+	d := -int64(p*pt + 0.5)
 	if d < -20*pt {
 		return 1.5
 	}
