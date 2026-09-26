@@ -64,6 +64,15 @@ func TestMinusMatchesPlus(t *testing.T) {
 // buys: a braced atom is Ord, so `a{x}b` carries none, and the difference against
 // `axb` is exactly what the class asks for (tex.web:15062 — Ord-Rel is thick,
 // Bin either side medium, Ord-Ord nothing).
+//
+// The AMOUNTS come from tex.web §764 and were measured off tectonic, not read out
+// of interAtom: thin is 3mu, medium 4mu, thick 5mu. This test previously asserted
+// 3mu for thick and 2mu for medium, which is what the table in interAtom happened
+// to hold — a fixture of the implementation's own output, which cannot fail. It
+// passed for as long as every atom space in the library was short by 2mu.
+//
+// The Punct rows are new for the same reason: with no thin-space subject, a thin
+// space of 1mu was never charged against anything.
 func TestClassSpacingAgainstABracedAtom(t *testing.T) {
 	r := newRenderer(t)
 	const px = 10
@@ -74,9 +83,13 @@ func TestClassSpacingAgainstABracedAtom(t *testing.T) {
 		why         string
 	}{
 		{`a/b`, `a{/}b`, 0, "`/` is Ord (fontmath.ltx:171): a/b sets as one word"},
-		{`a:b`, `a{:}b`, 2 * 3 * mu, "`:` is Rel (fontmath.ltx:155): a thick space each side"},
-		{`a+b`, `a{+}b`, 2 * 2 * mu, "`+` is Bin (fontmath.ltx:151): a medium space each side"},
-		{`a-b`, `a{-}b`, 2 * 2 * mu, "`-` is Bin (fontmath.ltx:153): a medium space each side"},
+		{`a:b`, `a{:}b`, 2 * 5 * mu, "`:` is Rel (fontmath.ltx:155): a thick space each side"},
+		{`a+b`, `a{+}b`, 2 * 4 * mu, "`+` is Bin (fontmath.ltx:151): a medium space each side"},
+		{`a-b`, `a{-}b`, 2 * 4 * mu, "`-` is Bin (fontmath.ltx:153): a medium space each side"},
+		{`a,b`, `a{,}b`, 3 * mu, "`,` is Punct (fontmath.ltx:147): a thin space AFTER only"},
+		{`a;b`, `a{;}b`, 3 * mu, "`;` is Punct (fontmath.ltx:157): a thin space AFTER only"},
+		{`a\in b`, `a{\in}b`, 2 * 5 * mu, `\in is Rel: a thick space each side`},
+		{`a\times b`, `a{\times}b`, 2 * 4 * mu, `\times is Bin: a medium space each side`},
 		{`n!`, `n{!}`, 0, "`!` is Close (fontmath.ltx:149): nothing after an Ord"},
 		{`n?`, `n{?}`, 0, "`?` is Close (fontmath.ltx:169): nothing after an Ord"},
 	}
