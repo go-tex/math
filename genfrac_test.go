@@ -31,19 +31,19 @@ func TestTriangleBinaryOperators(t *testing.T) {
 // (\genfrac()\z@{}, amsmath.sty:240).
 func TestGenfrac(t *testing.T) {
 	r := newRenderer(t)
-	for _, c := range []struct{ nom, tex string }{
-		{"crochets sans filet", `\genfrac[]{0pt}{}{n}{k}`}, // le q-binôme des vrais papiers
-		{"accolades sans filet", `\genfrac{\{}{\}}{0pt}{}{n}{k}`},
-		{"sans délimiteur, filet", `\genfrac{}{}{}{}{a}{b}`},
-		{"style affiché", `\genfrac{}{}{}0{a}{b}`},
+	for _, c := range []struct{ name, tex string }{
+		{"brackets, no rule", `\genfrac[]{0pt}{}{n}{k}`}, // the q-binomial of real papers
+		{"braces, no rule", `\genfrac{\{}{\}}{0pt}{}{n}{k}`},
+		{"no delimiter, rule", `\genfrac{}{}{}{}{a}{b}`},
+		{"display style", `\genfrac{}{}{}0{a}{b}`},
 		{"style script", `\genfrac()\z@{2}{a}{b}`},
 	} {
 		svg, err := r.RenderSVG(c.tex, 12)
 		if err != nil {
-			t.Fatalf("%s: render(%q): %v", c.nom, c.tex, err)
+			t.Fatalf("%s: render(%q): %v", c.name, c.tex, err)
 		}
 		if n := strings.Count(svg, "<path"); n < 2 {
-			t.Errorf("%s: %d tracés, want au moins le numérateur et le dénominateur", c.nom, n)
+			t.Errorf("%s: %d paths, want at least the numerator and the denominator", c.name, n)
 		}
 	}
 	// The rule is what separates \frac from \binom: an empty thickness draws one,
@@ -57,7 +57,7 @@ func TestGenfrac(t *testing.T) {
 		t.Fatal(err)
 	}
 	if a, b := strings.Count(withRule, "<rect"), strings.Count(noRule, "<rect"); a <= b {
-		t.Errorf("filet: %d rect avec, %d sans — l'épaisseur vide doit tracer un filet", a, b)
+		t.Errorf("rule: %d rects with, %d without - an empty thickness must draw a rule", a, b)
 	}
 }
 
@@ -66,17 +66,17 @@ func TestGenfrac(t *testing.T) {
 // can fail on its own.
 func TestGenfracMalformed(t *testing.T) {
 	r := newRenderer(t)
-	for _, c := range []struct{ nom, tex string }{
-		{"rien du tout", `\genfrac`},
-		{"délimiteur gauche inconnu", `\genfrac{\foo}{}{}{}{a}{b}`},
-		{"délimiteur droit inconnu", `\genfrac{}{\foo}{}{}{a}{b}`},
-		{"accolade non fermée sur le délimiteur", `\genfrac{(`},
-		{"délimiteur gauche seul", `\genfrac(`},
-		{"numérateur manquant", `\genfrac{}{}{}{}`},
-		{"dénominateur manquant", `\genfrac{}{}{}{}{a}`},
+	for _, c := range []struct{ name, tex string }{
+		{"nothing at all", `\genfrac`},
+		{"unknown left delimiter", `\genfrac{\foo}{}{}{}{a}{b}`},
+		{"unknown right delimiter", `\genfrac{}{\foo}{}{}{a}{b}`},
+		{"unclosed brace on the delimiter", `\genfrac{(`},
+		{"left delimiter alone", `\genfrac(`},
+		{"missing numerator", `\genfrac{}{}{}{}`},
+		{"missing denominator", `\genfrac{}{}{}{}{a}`},
 	} {
 		if _, err := r.RenderSVG(c.tex, 12); err == nil {
-			t.Errorf("%s: %q rendu sans erreur", c.nom, c.tex)
+			t.Errorf("%s: %q rendered without error", c.name, c.tex)
 		}
 	}
 }
@@ -96,10 +96,10 @@ func TestGenfracStyles(t *testing.T) {
 		h[i] = m.Height + m.Depth
 	}
 	if !(h[0] >= h[1] && h[1] > h[2]) {
-		t.Errorf("hauteurs %v: display doit être au moins aussi haut que text, et text plus haut que script", h)
+		t.Errorf("heights %v: display must be at least as tall as text, and text taller than script", h)
 	}
 	if h[3] > h[2] {
-		t.Errorf("hauteurs %v: scriptscript ne doit pas dépasser script", h)
+		t.Errorf("heights %v: scriptscript must not exceed script", h)
 	}
 }
 
@@ -118,7 +118,7 @@ func TestGenfracZeroThicknessSpellings(t *testing.T) {
 			t.Fatalf("%s: %v", zero, err)
 		}
 		if a, b := strings.Count(svg, "<rect"), strings.Count(ruled, "<rect"); a >= b {
-			t.Errorf("épaisseur %s: %d rect, autant que la version filetée (%d)", zero, a, b)
+			t.Errorf("thickness %s: %d rects, as many as the ruled version (%d)", zero, a, b)
 		}
 	}
 }
@@ -161,16 +161,16 @@ func TestInlineFractionIsShorterThanDisplay(t *testing.T) {
 	}
 	hi, hd := inl.Height+inl.Depth, dis.Height+dis.Depth
 	if hi >= hd {
-		t.Errorf("hauteurs %.3f (inline) et %.3f (display) : une fraction en ligne doit être PLUS COURTE", hi, hd)
+		t.Errorf("heights %.3f (inline) and %.3f (display): an inline fraction must be SHORTER", hi, hd)
 	}
 	// The point of the rule: it fits on a text line. A 11pt line is 13.6 pt of
 	// baseline distance, so a taller box forces the host engine onto \lineskip.
 	if hi > 13.6 {
-		t.Errorf("hauteur en ligne %.3f pt : ne tient pas dans un interligne de 13,6 pt", hi)
+		t.Errorf("inline height %.3f pt: does not fit in a 13.6 pt leading", hi)
 	}
 	// The parts shrink, so the fraction is narrower too — the width is what showed
 	// the sizes were identical before.
 	if inl.Width >= dis.Width {
-		t.Errorf("largeurs %.3f (inline) et %.3f (display) : les parties doivent rétrécir", inl.Width, dis.Width)
+		t.Errorf("widths %.3f (inline) and %.3f (display): the parts must shrink", inl.Width, dis.Width)
 	}
 }

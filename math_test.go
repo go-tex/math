@@ -606,12 +606,12 @@ func TestAccentSitsJustAboveTheNucleus(t *testing.T) {
 			t.Fatalf("%s: %v", acc, err)
 		}
 		if m.Height <= base.Height {
-			t.Errorf("%s{x} : hauteur %.2f, pas plus haute que x seul (%.2f)", acc, m.Height, base.Height)
+			t.Errorf("%s{x}: height %.2f, no taller than x alone (%.2f)", acc, m.Height, base.Height)
 		}
 		// The whole accented box must still fit on a text line: at 11px the baseline
 		// distance is 13.6, so anything approaching it forces the host onto \lineskip.
 		if m.Height+m.Depth > 11 {
-			t.Errorf("%s{x} : boîte de %.2f pt, ne tient pas sur une ligne de texte", acc, m.Height+m.Depth)
+			t.Errorf("%s{x}: box of %.2f pt, does not fit on a line of text", acc, m.Height+m.Depth)
 		}
 	}
 }
@@ -624,14 +624,14 @@ func TestGlyphInkIgnoresUnusedSegmentPoints(t *testing.T) {
 	e := &engine{font: r.font, upem: float64(r.font.UnitsPerEm()), gc: r.gc}
 	gid, ok := e.font.GlyphIndex('ˆ')
 	if !ok {
-		t.Skip("la police n'a pas de circonflexe")
+		t.Skip("the face has no circumflex")
 	}
 	top, bot := e.gidInk(gid, 11)
 	if bot <= 0 {
-		t.Errorf("encre du circonflexe de %.3f à %.3f : un accent ne touche pas la ligne de base", bot, top)
+		t.Errorf("circumflex ink from %.3f to %.3f: an accent does not touch the baseline", bot, top)
 	}
 	if top-bot > 4 {
-		t.Errorf("circonflexe haut de %.3f pt : trop épais pour un accent", top-bot)
+		t.Errorf("circumflex %.3f pt tall: too thick for an accent", top-bot)
 	}
 }
 
@@ -655,7 +655,7 @@ func TestLeftRightMatchesPlainDelimiters(t *testing.T) {
 	// 10.25, so a tenth of a point is a generous tolerance for "did not grow".
 	const tol = 0.1
 	if d := (big.Height + big.Depth) - (plain.Height + plain.Depth); d > tol || d < -tol {
-		t.Errorf("tailles %.3f (\\left) et %.3f (nues) : un délimiteur autour d'une lettre ne doit pas grandir",
+		t.Errorf("sizes %.3f (\\left) and %.3f (bare): a delimiter around a letter must not grow",
 			big.Height+big.Depth, plain.Height+plain.Depth)
 	}
 	// It must still grow for content that needs it.
@@ -664,7 +664,7 @@ func TestLeftRightMatchesPlainDelimiters(t *testing.T) {
 		t.Fatal(err)
 	}
 	if tall.Height+tall.Depth <= plain.Height+plain.Depth {
-		t.Errorf("un délimiteur autour d'une fraction (%.3f) doit dépasser le cas nu (%.3f)",
+		t.Errorf("a delimiter around a fraction (%.3f) must exceed the bare case (%.3f)",
 			tall.Height+tall.Depth, plain.Height+plain.Depth)
 	}
 }
@@ -694,7 +694,7 @@ func TestSuperscriptBaselineDrops(t *testing.T) {
 			t.Fatalf("%s: %v", c.tex, err)
 		}
 		if got := m.Height + m.Depth; got > c.max {
-			t.Errorf("$%s$ : %.2f pt, au-delà de %.2f (le témoin $f(x)$ fait %.2f)",
+			t.Errorf("$%s$: %.2f pt, past %.2f (the control $f(x)$ is %.2f)",
 				c.tex, got, c.max, plain.Height+plain.Depth)
 		}
 	}
@@ -708,6 +708,6 @@ func TestSuperscriptBaselineDrops(t *testing.T) {
 		t.Fatal(err)
 	}
 	if sup.Height <= base.Height {
-		t.Errorf("hauteurs %.2f ($x^2$) et %.2f ($x$) : un exposant doit dépasser sa base", sup.Height, base.Height)
+		t.Errorf("heights %.2f ($x^2$) and %.2f ($x$): a superscript must exceed its base", sup.Height, base.Height)
 	}
 }
