@@ -380,11 +380,25 @@ func (e *engine) gidInk(gid opentype.GlyphIndex, px int) (top, bot float64) {
 // interAtom returns the space (px) inserted between two adjacent atom classes,
 // per TeX's Appendix G table (thin=3mu, med=4mu, thick=5mu; mu = em/18).
 func interAtom(l, r atomClass, px int) float64 {
+	// tex.web §764: thin_mu_skip is 3mu, med_mu_skip 4mu, thick_mu_skip 5mu — the
+	// values plain.tex assigns and IniTeX's defaults. They were 1, 2 and 3 here, an
+	// iota's worth apiece, so every inter-atom space in every formula was short by
+	// exactly 2mu: 1.1111pt at 10pt, on both sides of every binary operator and
+	// every relation.
+	//
+	// Measured off tectonic at 10pt, six subjects against a braced control that
+	// neutralises the glyph (`aXb` minus `a{X}b`, so what is left is the junctions):
+	//
+	//	class            subject         tectonic    before
+	//	Punct (thin)     `,`  `;`          3.00mu    1.00mu
+	//	Bin   (med)      `+`  \times       8.00mu    4.00mu
+	//	Rel   (thick)    `=`  \in         10.00mu    6.00mu
+	//
+	// Bin and Rel are charged on both sides, Punct on one (Ord-Punct is 0).
 	const (
-		_ = iota
-		thin
-		med
-		thick
+		thin  = 3
+		med   = 4
+		thick = 5
 	)
 	table := [8][8]int{
 		clsOrd:   {clsOp: thin, clsBin: med, clsRel: thick, clsInner: thin},
