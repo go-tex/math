@@ -174,3 +174,44 @@ func TestEveryCensusSymbolRenders(t *testing.T) {
 		}
 	}
 }
+
+// ⛔ Adding the OPENER of a delimiter pair surfaces its closer. A paper writing
+// \llparenthesis x \rrparenthesis failed on the opener, so the census named only the
+// opener; supplying it moved the failure one command right and \rrparenthesis appeared
+// with 31 equations, \urcorner with 11 and \rbrack with 1.
+//
+// The census cannot see the second half of a pair, so it must not be the only thing
+// consulted for one. This asserts each pair is complete AND correctly polarised — a
+// closer declared clsOpen would space the group wrongly while still rendering.
+func TestADelimiterPairIsAddedAsAPair(t *testing.T) {
+	for _, p := range []struct{ open, close string }{
+		{"llparenthesis", "rrparenthesis"},
+		{"ulcorner", "urcorner"},
+		{"lbrack", "rbrack"},
+		{"Lbag", "Rbag"},
+	} {
+		o, ok1 := symbols[p.open]
+		c, ok2 := symbols[p.close]
+		if !ok1 || !ok2 {
+			t.Errorf(`\%s present=%v, \%s present=%v: a pair is added as a pair`,
+				p.open, ok1, p.close, ok2)
+			continue
+		}
+		if o.cls != clsOpen {
+			t.Errorf(`\%s class = %d, want clsOpen`, p.open, o.cls)
+		}
+		if c.cls != clsClose {
+			t.Errorf(`\%s class = %d, want clsClose`, p.close, c.cls)
+		}
+	}
+	// \llcorner stays out, and the reason is not symmetry: if a paper wrote it, IT
+	// would be the census's first unknown. The absence is in the place that answers
+	// the question. \lrcorner is here because the census named it directly.
+	if _, ok := symbols["llcorner"]; ok {
+		t.Error(`\llcorner is in the table: no paper in the 999-paper census names it, ` +
+			`and it would be the first unknown if one did`)
+	}
+	if _, ok := symbols["lrcorner"]; !ok {
+		t.Error(`\lrcorner is missing: the census names it directly, 152 equations`)
+	}
+}
