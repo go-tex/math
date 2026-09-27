@@ -728,6 +728,30 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 		}
 		b.w = 0
 		return b, clsOrd, false, r, nil
+	case "scalebox", "reflectbox":
+		// graphics.sty:519-538. \reflectbox is \Gscale@box-1[1], a horizontal mirror, so
+		// both go through one path.
+		h, v := -1.0, 1.0
+		rest := toks
+		if name == "scalebox" {
+			f, r, err := readScaleFactor(toks)
+			if err != nil {
+				return nil, 0, false, nil, err
+			}
+			h, v, rest = f, f, r
+			// The optional [v]; without it the vertical factor IS the horizontal one,
+			// which is what \scalebox's own \@ifnextchar branch passes.
+			if g, r2, ok := readOptScaleFactor(rest); ok {
+				v, rest = g, r2
+			}
+		}
+		b, r3, err := e.parseGroupArg(rest, sty)
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		// The class is the CONTENT's: scaling changes a box's size, not what kind of atom
+		// it is, so the spacing around it must not change either.
+		return e.scaleBox(b, h, v), b.cls, false, r3, nil
 	case "substack":
 		// \substack{a \\ b \\ c}: script-size lines stacked and centred, used as a
 		// multi-line sub/superscript under a big operator.
