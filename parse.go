@@ -1754,4 +1754,98 @@ var symbols = map[string]sym{
 	// dotless letters and angle ordinaries (amssymb) seen in the corpus
 	"imath": {'ı', clsOrd}, "jmath": {'ȷ', clsOrd},
 	"measuredangle": {'∡', clsOrd}, "sphericalangle": {'∢', clsOrd},
+	// ── 57 symbols the dropped-equation census named, each sourced before it was
+	// added. go-tex/engine#466: these are the entries a 999-paper census of the arXiv
+	// corpus reports as the first unknown command of an equation the maths layer
+	// refused, and together they account for 1930 of the 11292 equations it drops.
+	//
+	// The CODEPOINT comes from unicode-math-table.tex. The CLASS comes from the
+	// package that actually declares the command — amssymb, amsfonts, fontmath.ltx,
+	// latexsym or stmaryrd — because that is what a document loading it compiles
+	// with, and only from unicode-math where none of them defines it. Where the two
+	// disagree the line says so; it is not a typo. Reading the sources first changed
+	// four entries a plausible guess would have got wrong:
+	//
+	//   \blacktriangleleft is the LARGE triangle U+25C0, not the small U+25C2, while
+	//   \blacktriangle IS the small U+25B4 — the up/down pair and the left/right pair
+	//   take different sizes (unicode-math-table.tex:691,703).
+	//
+	//   \triangledown is U+25BF, the SMALL open triangle; U+25BD is \bigtriangledown,
+	//   which this table already holds. Mapping both to U+25BD would have made two
+	//   amssymb symbols identical.
+	//
+	//   \blacktriangleleft/right are amssymb RELATIONS (amssymb.sty:120-121), which
+	//   unicode-math classes as ordinary. \Join is a relation too (latexsym.sty:60),
+	//   not the n-ary operator unicode-math gives it.
+	//
+	//   \smallsetminus takes U+2216, which is also this table's \setminus. Unicode has
+	//   no small variant; unicode-math resolves the clash by moving \setminus to
+	//   U+29F5, which we do not do because U+2216 is what LaTeX's \setminus means. So
+	//   the two render alike — right in meaning, one size too large.
+	//
+	// Four census entries are deliberately NOT here: \widecheck (97 equations),
+	// \underrightarrow (39), \underleftarrow (1) and \dddot (1) are stretchy or
+	// combining ACCENTS, and a combining character standing alone in a symbol table
+	// is a defect, not a symbol. They need the accent machinery.
+	//
+	// Every rune below has a glyph in the embedded font, asserted for the whole table
+	// by TestEverySymbolHasAGlyphInTheEmbeddedFont — a rune without one is typeset as
+	// .notdef, which looks like content and is worse than the drop it replaced.
+	"blacktriangleleft":  {'◀', clsRel},   // U+25C0 (large) left triangle, filled — amssymb.sty:121 [202 eq; u-m says mathord]
+	"Bbbk":               {'𝕜', clsOrd},   // U+1D55C mathematical double-struck small k — amssymb.sty:261 [188 eq; u-m says mathalpha]
+	"restriction":        {'↾', clsRel},   // U+21BE up harpoon-right — amssymb.sty:68 (\let\restriction\upharpoonright) [165 eq]
+	"lrcorner":           {'⌟', clsClose}, // U+231F lower right corner — amsfonts.sty:77 [152 eq]
+	"blacktriangle":      {'▴', clsOrd},   // U+25B4 up triangle, filled — amssymb.sty:123 [139 eq]
+	"Lbag":               {'⟅', clsOpen},  // U+27C5 left s-shaped bag delimiter (Unicode name) — stmaryrd.sty:166 [109 eq]
+	"triangledown":       {'▿', clsOrd},   // U+25BF down triangle, open — amssymb.sty:124 [103 eq]
+	"smallsetminus":      {'∖', clsBin},   // U+2216 small set minus (cf. reverse solidus) — amssymb.sty:251 [85 eq]
+	"blacktriangleright": {'▶', clsRel},   // U+25B6 (large) right triangle, filled — amssymb.sty:120 [74 eq; u-m says mathord]
+	"rightharpoonup":     {'⇀', clsRel},   // U+21C0 right harpoon-up — fontmath.ltx:351 [67 eq]
+	"blacktriangledown":  {'▾', clsOrd},   // U+25BE down triangle, filled — amssymb.sty:119 [59 eq]
+	"longleftrightarrow": {'⟷', clsRel},   // U+27F7 long left right arrow — unicode-math-table.tex:865 [56 eq]
+	"upharpoonright":     {'↾', clsRel},   // U+21BE /upharpoonright /restriction a: up harpoon-right — amssymb.sty:67 [56 eq]
+	"Downarrow":          {'⇓', clsRel},   // U+21D3 down double arrow — fontmath.ltx:479 [55 eq]
+	"frown":              {'⌢', clsRel},   // U+2322 down curve — fontmath.ltx:348 [40 eq]
+	"Uparrow":            {'⇑', clsRel},   // U+21D1 up double arrow — fontmath.ltx:477 [38 eq]
+	"looparrowright":     {'↬', clsRel},   // U+21AC right arrow-looped — amssymb.sty:81 [38 eq]
+	"eqdef":              {'≝', clsRel},   // U+225D equals by definition — unicode-math-table.tex:421 [30 eq]
+	"llparenthesis":      {'⦇', clsOpen},  // U+2987 z notation left image bracket — stmaryrd.sty:169 [28 eq]
+	"rightleftharpoons":  {'⇌', clsRel},   // U+21CC right harpoon over left — amssymb.sty:55 [24 eq]
+	"nrightarrow":        {'↛', clsRel},   // U+219B not right arrow — amssymb.sty:228 [22 eq]
+	"sslash":             {'⫽', clsBin},   // U+2AFD double solidus operator — stmaryrd.sty:102 [22 eq]
+	"backsim":            {'∽', clsRel},   // U+223D reverse similar — amssymb.sty:163 [18 eq]
+	"bigsqcap":           {'⨅', clsOp},    // U+2A05 n-ary square intersection operator — stmaryrd.sty:196 [17 eq]
+	"mho":                {'℧', clsOrd},   // U+2127 conductance — amssymb.sty:239 [14 eq]
+	"rightleftarrows":    {'⇄', clsRel},   // U+21C4 right arrow over left arrow — amssymb.sty:75 [12 eq]
+	"ulcorner":           {'⌜', clsOpen},  // U+231C upper left corner — amsfonts.sty:74 [11 eq]
+	"succsim":            {'≿', clsRel},   // U+227F succeeds, similar — amssymb.sty:83 [8 eq]
+	"nsubseteq":          {'⊈', clsRel},   // U+2288 not subset, equals — amssymb.sty:213 [7 eq]
+	"Cup":                {'⋓', clsBin},   // U+22D3 /cup /doublecup b: double union — amssymb.sty:144 [6 eq]
+	"geqq":               {'≧', clsRel},   // U+2267 greater, double equals — amssymb.sty:107 [6 eq]
+	"multimap":           {'⊸', clsRel},   // U+22B8 /multimap a: — amssymb.sty:86 [6 eq]
+	"rightarrowtail":     {'↣', clsRel},   // U+21A3 right arrow-tailed — amssymb.sty:72 [6 eq]
+	"Join":               {'⨝', clsRel},   // U+2A1D join — latexsym.sty:60 [5 eq; u-m says mathop]
+	"Rbag":               {'⟆', clsClose}, // U+27C6 right s-shaped bag delimiter (Unicode name) — stmaryrd.sty:167 [5 eq]
+	"dotminus":           {'∸', clsBin},   // U+2238 minus sign, dot above — unicode-math-table.tex:382 [5 eq]
+	"mapsfrom":           {'↤', clsRel},   // U+21A4 maps to, leftward — unicode-math-table.tex:242 [5 eq]
+	"nleq":               {'≰', clsRel},   // U+2270 not less-than-or-equal — amssymb.sty:173 [5 eq]
+	"nvDash":             {'⊭', clsRel},   // U+22AD not vertical, double dash — amssymb.sty:221 [5 eq]
+	"leftrightarrows":    {'⇆', clsRel},   // U+21C6 left arrow over right arrow — amssymb.sty:74 [4 eq]
+	"leqq":               {'≦', clsRel},   // U+2266 less, double equals — amssymb.sty:100 [4 eq]
+	"nprec":              {'⊀', clsRel},   // U+2280 not precedes — amssymb.sty:177 [4 eq]
+	"Subset":             {'⋐', clsRel},   // U+22D0 double subset — amssymb.sty:142 [3 eq]
+	"lll":                {'⋘', clsRel},   // U+22D8 /ll /lll /llless r: triple less-than — amssymb.sty:156 [3 eq]
+	"nRightarrow":        {'⇏', clsRel},   // U+21CF not implies — amssymb.sty:230 [3 eq]
+	"precneqq":           {'⪵', clsRel},   // U+2AB5 precedes above not equal to — amssymb.sty:193 [3 eq]
+	"leftrightharpoons":  {'⇋', clsRel},   // U+21CB left harpoon over right — amssymb.sty:56 [2 eq]
+	"smile":              {'⌣', clsRel},   // U+2323 up curve — fontmath.ltx:347 [2 eq]
+	"approxeq":           {'≊', clsRel},   // U+224A approximate, equals — amssymb.sty:254 [1 eq]
+	"fint":               {'⨏', clsOp},    // U+2A0F integral average with slash — unicode-math-table.tex:1145 [1 eq]
+	"gtrapprox":          {'⪆', clsRel},   // U+2A86 greater-than or approximate — amssymb.sty:85 [1 eq]
+	"gtreqqless":         {'⪌', clsRel},   // U+2A8C greater-than above double-line equal above less-than — amssymb.sty:129 [1 eq]
+	"lbrack":             {'[', clsOpen},  // U+005B left square bracket — unicode-math-table.tex:22 [1 eq]
+	"lessapprox":         {'⪅', clsRel},   // U+2A85 less-than or approximate — amssymb.sty:94 [1 eq]
+	"lneq":               {'⪇', clsRel},   // U+2A87 less-than and single-line not equal to — amssymb.sty:183 [1 eq]
+	"lnsim":              {'⋦', clsRel},   // U+22E6 less, not similar — amssymb.sty:189 [1 eq]
+	"ncong":              {'≇', clsRel},   // U+2247 not congruent with — amssymb.sty:200 [1 eq]
 }
