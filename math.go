@@ -911,19 +911,145 @@ func (e *engine) radical(body, index *box, sty style) *box {
 }
 
 // stretchVertical returns the natural box (baseline-relative, not re-centred)
-// for rune r grown to at least target height using MATH size variants; the
-// largest variant is the fallback.
+// for rune r grown to at least target height, from the face's MATH size variants
+// and, when those run out, from its glyph ASSEMBLY.
+//
+// Taking the largest variant as the fallback is a cap, and the cap was absolute: a
+// brace's depth stopped at 16.105 for every content height from 24pt to 200pt, so a
+// \left\lbrace over 200pt of material was set with a brace about a fifth of the
+// height it was meant to embrace (#36). A five-row cases is already past it.
 func (e *engine) stretchVertical(r rune, target float64, px int, cls atomClass) *box {
 	gid, _ := e.font.GlyphIndex(r) // 0 (notdef) if absent
 	best := gid
-	variants, _ := e.face(px).MathVariants(gid, true)
+	variants, asm := e.face(px).MathVariants(gid, true)
 	for _, v := range variants {
 		best = v.Glyph
 		if float64(v.Advance) >= target {
-			break
+			return e.gidBox(best, px, cls)
 		}
 	}
+	// The variants did not reach it. An assembly is a recipe, so it can reach any
+	// target; without one the largest variant remains all the face offers.
+	if b := e.assembleVertical(asm, target, px, cls); b != nil {
+		return b
+	}
 	return e.gidBox(best, px, cls)
+}
+
+// assembleVertical stacks an assembly's parts until they cover target, repeating
+// the Extender parts, and returns nil when the recipe cannot be used.
+//
+// Parts are listed bottom to top for a vertical assembly — the OpenType MATH spec
+// says so for MathGlyphAssembly ("bottom to top for assemblies used in vertical
+// direction"), and it is the one thing here that NO measurement in this package can
+// confirm: a brace built upside down has the same bounding box, and this face's
+// hooks are mirror images of each other. So the order rests on the specification and
+// is flagged as such, rather than on a test that would only appear to check it.
+//
+// Overlap is SOLVED for, not fixed. Each joint may overlap anywhere between
+// MinConnectorOverlap and min(EndConnector, StartConnector) of the two parts it
+// joins, so a given part count spans a RANGE of sizes: the recipe is a continuous
+// control inside that range, not a fixed size.
+//
+// Taking the minimum overlap throughout — which a first version of this did, on the
+// reasoning that it reaches furthest per repetition — produces the LARGEST size for
+// each count, which is the worst choice at the bottom of the range. The brace's five
+// parts advance 65.00 with four joints: at minimum overlap that is 61.00, and with
+// this face's 5/5/5/6 connectors it can be as little as 44.00. The library jumped
+// from a 38.00 variant to 61.00 where the reference gives 42.50, and three measured
+// environments regressed. So: the smallest part count that can REACH the target at
+// minimum overlap, then overlap spread uniformly to land as close to it as the
+// joints allow.
+func (e *engine) assembleVertical(asm *opentype.MathAssembly, target float64, px int, cls atomClass) *box {
+	if asm == nil || len(asm.Parts) == 0 {
+		return nil
+	}
+	minOv := float64(asm.MinConnectorOverlap)
+	// The tightest joint decides how far the stack can be compressed, the overlap here
+	// being uniform. Joints are between consecutive parts in the recipe's own order,
+	// and an extender repeated n times also joins ITSELF — which the pairwise loop
+	// never sees.
+	maxOv := gomath.Inf(1)
+	for i := 0; i+1 < len(asm.Parts); i++ {
+		if o := gomath.Min(float64(asm.Parts[i].EndConnector),
+			float64(asm.Parts[i+1].StartConnector)); o < maxOv {
+			maxOv = o
+		}
+	}
+	for _, p := range asm.Parts {
+		if !p.Extender {
+			continue
+		}
+		if o := gomath.Min(float64(p.EndConnector), float64(p.StartConnector)); o < maxOv {
+			maxOv = o
+		}
+	}
+	if gomath.IsInf(maxOv, 1) || maxOv < minOv {
+		maxOv = minOv
+	}
+	fixed, ext := 0.0, 0.0
+	nFixed, nExt := 0, 0
+	for _, p := range asm.Parts {
+		if p.Extender {
+			ext += float64(p.FullAdvance)
+			nExt++
+			continue
+		}
+		fixed += float64(p.FullAdvance)
+		nFixed++
+	}
+	if nExt == 0 || ext <= minOv*float64(nExt) {
+		// No extender, or an extender that adds nothing once its overlap is paid: the
+		// recipe cannot grow, and looping on it would not terminate.
+		return nil
+	}
+	// The smallest repetition count that can REACH the target, judged at minimum
+	// overlap because that is the largest a given count can be.
+	n := 0
+	k := nFixed
+	adv := fixed
+	for n < 64 && adv-minOv*float64(k-1) < target {
+		n++
+		k = nFixed + n*nExt
+		adv = fixed + float64(n)*ext
+	}
+	// Then the uniform overlap that lands closest to the target from above. A count
+	// that cannot compress far enough stays at maxOv and overshoots; that residue is
+	// the face's granularity and not a choice made here.
+	ov := minOv
+	if k > 1 {
+		ov = gomath.Max(minOv, gomath.Min(maxOv, (adv-target)/float64(k-1)))
+	}
+	out := newBox(cls)
+	y := 0.0 // SVG Y-down: parts are laid from the BOTTOM up, so y decreases
+	first := true
+	w := 0.0
+	for i := len(asm.Parts) - 1; i >= 0; i-- {
+		p := asm.Parts[i]
+		reps := 1
+		if p.Extender {
+			reps = n
+		}
+		for range reps {
+			g := e.gidBox(p.Glyph, px, cls)
+			if !first {
+				y += ov
+			}
+			first = false
+			y -= float64(p.FullAdvance)
+			place(out, g, 0, y)
+			if g.w > w {
+				w = g.w
+			}
+		}
+	}
+	// The stack was built upward from the baseline, so its whole extent is above it:
+	// height is what it reached, depth zero. axisCentre then puts it on the axis, as
+	// it does for a single variant, and that is where the depth comes from.
+	out.w = w
+	out.h = -y
+	out.d = 0
+	return out
 }
 
 // axisCentre re-positions a box so its vertical midpoint sits on the math axis

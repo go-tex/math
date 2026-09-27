@@ -4,8 +4,11 @@
 package math
 
 import (
+	"fmt"
 	"math"
 	"testing"
+
+	"github.com/go-opentype/opentype"
 )
 
 func envTotal(t *testing.T, r *Renderer, tex string) float64 {
@@ -33,9 +36,22 @@ func envTotal(t *testing.T, r *Renderer, tex string) float64 {
 //	pmatrix          12.00    9.32    12.00                36.00   23.84   36.00
 //	bmatrix          12.00    9.32    12.00                36.00   23.85   36.00
 //	vmatrix          12.00       —    12.00                36.00       —    36.00
-//	cases            18.00    9.33    16.67                43.20   31.01   43.20
+//	cases            18.00    9.33    16.67                43.20   31.01   45.00
 //	aligned          12.00    7.02    12.00                42.00   31.06   42.00
 //	gathered         12.00    5.45    12.00                42.00   24.67   42.00
+//
+// ⚠ cases at three rows read 43.20 — exactly the reference — while the extensible
+// brace was CAPPED at the largest size variant. The brace was too short, the rows'
+// own 43.20 decided the total, and the number matched for a reason that had nothing
+// to do with the brace. Removing the cap (#36) lets the assembled brace reach 45.00,
+// which exceeds the rows, so the total is the brace's. The 1.80 is the face's
+// assembly granularity: the recipe advances 65.00 over four joints that compress by
+// at most 5/5/5/6, so 45.00 is the smallest it can be built at, and the next count
+// down cannot reach 43.20 at all.
+//
+// The cap it replaced was 21x worse where it mattered. Against tectonic over content
+// heights 2 to 200pt, sum of |error| on the delimiter total: 340.33 capped, 16.06
+// assembled. At 200pt of content the capped brace was 176.40 too short.
 //
 // TOTALS are asserted, not a derived pitch. For cases the derived pitch is
 // meaningless: its one-row total is floored by the brace (see
@@ -55,9 +71,11 @@ func TestRowsStackOnStrutsWithNoInterlineGlue(t *testing.T) {
 		{"pmatrix", `\begin{pmatrix}x\end{pmatrix}`, `\begin{pmatrix}x\\x\\x\end{pmatrix}`, 12, 36},
 		{"bmatrix", `\begin{bmatrix}x\end{bmatrix}`, `\begin{bmatrix}x\\x\\x\end{bmatrix}`, 12, 36},
 		{"vmatrix", `\begin{vmatrix}x\end{vmatrix}`, `\begin{vmatrix}x\\x\\x\end{vmatrix}`, 12, 36},
-		// cases carries \arraystretch 1.2, so 3 x 14.40. Its one row is the brace's.
+		// cases carries \arraystretch 1.2, so 3 x 14.40 of rows — but BOTH totals here
+		// are the brace's, not the rows': 16.67 at one row and 45.00 at three. See the
+		// note above for why the three-row figure moved away from the reference.
 		{"cases", `\begin{cases}x & y\end{cases}`,
-			`\begin{cases}x & y\\x & y\\x & y\end{cases}`, 16.67, 43.20},
+			`\begin{cases}x & y\\x & y\\x & y\end{cases}`, 16.67, 45.00},
 		// \jot adds 3pt at 10pt BETWEEN rows: 12 + 2 x 15.
 		{"aligned", `\begin{aligned}x &= y\end{aligned}`,
 			`\begin{aligned}x &= y\\x &= y\\x &= y\end{aligned}`, 12, 42},
@@ -98,15 +116,36 @@ func TestRowsStackOnStrutsWithNoInterlineGlue(t *testing.T) {
 // That is a separate feature from this model and wants its own change.
 func TestTheStretchedEnvironmentTracksItsStrutLinearly(t *testing.T) {
 	r := newRenderer(t)
-	// cases' rows are 14.40pt: three of them come to 43.20, which is 3 x 14.40 and
-	// not 3 x 12.00 (the unstretched strut) nor 3 x 15.40 (§679 against a 12pt
-	// leading, the model this replaced).
+	// ⛔ This assertion USED to run through \begin{cases}, whose three rows came to
+	// 43.20 while the extensible brace was capped and too short to decide the total.
+	// Uncapping it (#36) lets the brace reach 45.00 — which is 0.20 from the 45.20
+	// that the WRONG model produces. The delimiter had swallowed the very distinction
+	// this test exists to make, and a test that cannot separate the two models is the
+	// defect this whole file was written against.
+	//
+	// So the model is asserted where no delimiter can reach it: on the leading itself.
+	// A strutted row is \arraystretch x (.7 + .3) x \baselineskip and the rows butt,
+	// so three of them are exactly three struts — linear in the stretch, which is the
+	// property. §679 against a 12pt leading would give 15.40 per row at stretch 1.2.
+	for _, c := range []struct {
+		stretch, perRow float64
+	}{{1.0, 12.00}, {1.2, 14.40}, {1.5, 18.00}} {
+		h, d := strutLeading{baselineskip: bl(10), stretch: c.stretch}.strut()
+		if got := h + d; math.Abs(got-c.perRow) > 0.005 {
+			t.Errorf("strut at \\arraystretch %g = %.3f, tectonic gives %.2f per row",
+				c.stretch, got, c.perRow)
+		}
+		// The rows butt: no gap, so n rows are n struts and nothing else.
+		if gap := (strutLeading{baselineskip: bl(10), stretch: c.stretch}).gap(d, h); gap != 0 {
+			t.Errorf("strutted rows must butt, gap = %.3f at stretch %g", gap, c.stretch)
+		}
+	}
+	// And end to end, with the brace's contribution stated rather than mixed in: the
+	// rows are 43.20 and the assembled brace is 45.00, so the total is the brace's.
 	three := envTotal(t, r, `\begin{cases}x & y\\x & y\\x & y\end{cases}`)
-	if math.Abs(three-43.20) > 0.05 {
-		t.Errorf("cases three rows = %.3f, tectonic gives 43.20 (= 3 x 14.40); "+
-			"36.00 would mean the stretch is ignored, and 45.20 is what the §679 "+
-			"model produces against a 12pt leading - measured by putting it back, "+
-			"not calculated", three)
+	if math.Abs(three-45.00) > 0.05 {
+		t.Errorf("cases three rows = %.3f, this state is 45.00 — the ROWS are 43.20 "+
+			"(= 3 x 14.40, the reference) and the brace exceeds them", three)
 	}
 	// And the unstretched control, so this is a statement about the stretch and not
 	// about matrices in general.
@@ -334,5 +373,174 @@ func TestSmallmatrixSpacesInMuAtTheOuterSize(t *testing.T) {
 		if math.Abs(m.Width-c.want) > 0.002 {
 			t.Errorf("%s width = %.4f, tectonic gives %.4f", c.tex, m.Width, c.want)
 		}
+	}
+}
+
+// The extensible delimiter used to stop growing. stretchVertical took the largest
+// MATH size variant as its fallback, so a brace's depth was frozen at 16.105 for
+// every content height from 24pt to 200pt: a \left\lbrace over 200pt of material was
+// set with a brace about a fifth of the height it was meant to embrace (#36).
+//
+// An OpenType MATH font also carries MathGlyphAssembly, a recipe for building the
+// glyph from top, extender and bottom parts, and that is what had no implementation.
+//
+// \ht+\dp of \hbox{$\left\lbrace\rule{1pt}{H}\right.$} at 10pt, measured off tectonic
+// with `measure dimens` reading \ht0 and \dp0:
+//
+//	content   tectonic     capped   assembled
+//	      2      10.000      9.330       9.330
+//	     10      18.000     14.270      14.270
+//	     16      30.000     26.250      26.250
+//	     20      36.000     35.810      35.810
+//	     24      42.500     40.105      42.000
+//	     28      49.500     44.105      50.000
+//	     34      61.500     50.105      62.000
+//	     40      73.500     56.105      74.000
+//	     60     114.501     76.105     114.000
+//	    100     193.501    116.105     194.000
+//	    200     392.502    216.105     394.000
+//
+// Sum of |error| over those thirteen heights: 340.33 capped, 16.06 assembled. Below
+// 20pt of content nothing changes — the variants still cover it — and the error there
+// is the face's chain being finer than Computer Modern's, which is #36 and not this.
+func TestTheExtensibleDelimiterDoesNotStopGrowing(t *testing.T) {
+	r := newRenderer(t)
+	for _, c := range []struct {
+		content, want float64
+	}{
+		{24, 42.0}, {28, 50.0}, {34, 62.0}, {40, 74.0},
+		{60, 114.0}, {100, 194.0}, {200, 394.0},
+	} {
+		tex := fmt.Sprintf(`\left\lbrace\rule{1pt}{%gpt}\right.`, c.content)
+		_, m, err := r.RenderSVGMetrics(tex, 10)
+		if err != nil {
+			t.Fatalf("%s: %v", tex, err)
+		}
+		if got := m.Height + m.Depth; math.Abs(got-c.want) > 0.05 {
+			t.Errorf("content %gpt: delimiter total %.3f, this state is %.2f", c.content, got, c.want)
+		}
+	}
+}
+
+// TestTheDelimiterGrowsStrictlyWithItsContent states the property the cap broke,
+// rather than only the table above: past the variants' reach every increase in
+// content must increase the delimiter. The capped version was CONSTANT here — the
+// same 16.105 of depth at 24pt of content and at 200 — and a table of totals hid it,
+// because the content's own height kept the TOTAL rising while the brace stood still.
+func TestTheDelimiterGrowsStrictlyWithItsContent(t *testing.T) {
+	r := newRenderer(t)
+	prev := 0.0
+	for _, h := range []float64{24, 40, 60, 100, 160, 200} {
+		tex := fmt.Sprintf(`\left\lbrace\rule{1pt}{%gpt}\right.`, h)
+		_, m, err := r.RenderSVGMetrics(tex, 10)
+		if err != nil {
+			t.Fatalf("%s: %v", tex, err)
+		}
+		// The DEPTH is the delimiter's alone: the rule has none, so nothing else can
+		// contribute to it. That is what makes it the witness here and the total not.
+		if m.Depth <= prev {
+			t.Errorf("content %gpt: delimiter depth %.4f, no greater than %.4f at the "+
+				"previous height — the delimiter has stopped growing", h, m.Depth, prev)
+		}
+		prev = m.Depth
+	}
+}
+
+// TestTheAssemblyIsStackedByItsOwnArithmetic checks the stacking rather than the
+// outcome: k parts advancing `adv` in total, joined at overlap `ov`, reach
+// adv - (k-1)*ov. The brace's recipe is 5 parts advancing 65.00 with joints that
+// compress between 1.00 and 5.00, so it spans 45.00 to 61.00 at one repetition —
+// and a first version of this code fixed the overlap at the MINIMUM, which is the
+// largest of those, jumping to 61.00 where the reference gives 42.50.
+func TestTheAssemblyIsStackedByItsOwnArithmetic(t *testing.T) {
+	r := newRenderer(t)
+	e := &engine{font: r.font, upem: float64(r.font.UnitsPerEm()), gc: r.gc}
+	gid, ok := e.font.GlyphIndex('{')
+	if !ok {
+		t.Skip("the face has no brace")
+	}
+	_, asm := e.face(10).MathVariants(gid, true)
+	if asm == nil {
+		t.Skip("the face has no assembly for the brace")
+	}
+	// The recipe this test's numbers come from, asserted so a face change is noticed
+	// rather than silently changing what the bounds below mean.
+	if len(asm.Parts) != 5 || asm.MinConnectorOverlap != 1 {
+		t.Fatalf("recipe changed: %d parts, min overlap %d — re-derive the bounds",
+			len(asm.Parts), asm.MinConnectorOverlap)
+	}
+	adv := 0.0
+	for _, p := range asm.Parts {
+		adv += float64(p.FullAdvance)
+	}
+	if math.Abs(adv-65) > 0.01 {
+		t.Fatalf("parts advance %.2f in total, the bounds below assume 65.00", adv)
+	}
+	// A target inside [45.00, 61.00] must be met by compressing, not by adding parts.
+	for _, target := range []float64{45, 50, 55, 61} {
+		b := e.assembleVertical(asm, target, 10, clsOpen)
+		if b == nil {
+			t.Fatalf("target %.2f: no assembly", target)
+		}
+		if b.h < target-0.01 {
+			t.Errorf("target %.2f: assembled to %.3f, which does not reach it", target, b.h)
+		}
+		if b.h > target+5 {
+			t.Errorf("target %.2f: assembled to %.3f, overshooting by more than one "+
+				"joint's worth — the overlap is not being solved for", target, b.h)
+		}
+	}
+}
+
+// TestTheAssemblyRefusesRecipesItCannotUse exercises the three guards that the
+// shipped face never reaches. They are not dead code — assembleVertical takes the
+// recipe as a PARAMETER, so any face can bring one that hits them — so they are
+// tested with recipes rather than deleted.
+//
+// The one that matters is the third: a recipe whose extender adds nothing once its
+// overlap is paid would make the search loop forever, and the bound of 64 would then
+// silently cap the result instead of the caller learning the recipe is unusable.
+func TestTheAssemblyRefusesRecipesItCannotUse(t *testing.T) {
+	r := newRenderer(t)
+	e := &engine{font: r.font, upem: float64(r.font.UnitsPerEm()), gc: r.gc}
+	part := func(adv, start, end int, ext bool) opentype.MathAssemblyPart {
+		return opentype.MathAssemblyPart{
+			FullAdvance: adv, StartConnector: start, EndConnector: end, Extender: ext,
+		}
+	}
+	for _, c := range []struct {
+		name string
+		asm  *opentype.MathAssembly
+		want bool // an assembly is expected
+	}{
+		{"nil recipe", nil, false},
+		{"no parts", &opentype.MathAssembly{MinConnectorOverlap: 1}, false},
+		{"no extender", &opentype.MathAssembly{MinConnectorOverlap: 1,
+			Parts: []opentype.MathAssemblyPart{part(10, 0, 5, false), part(10, 5, 0, false)}}, false},
+		// The extender advances exactly what its two overlaps cost, so each repetition
+		// adds nothing and no count can ever reach a larger target.
+		{"extender that pays for itself", &opentype.MathAssembly{MinConnectorOverlap: 10,
+			Parts: []opentype.MathAssemblyPart{part(10, 0, 10, false), part(10, 10, 10, true),
+				part(10, 10, 0, false)}}, false},
+		// The extender FIRST, which is the bar's own recipe shape in this face. That is
+		// the only arrangement where its self-join can be strictly the tightest: with
+		// an extender between two fixed parts, the joint before it is already
+		// min(prev.End, ext.Start) and so never looser than min(ext.Start, ext.End).
+		{"extender at the end of the chain", &opentype.MathAssembly{MinConnectorOverlap: 1,
+			Parts: []opentype.MathAssemblyPart{part(20, 1, 8, true), part(20, 8, 0, false)}}, true},
+		// Connectors below MinConnectorOverlap, so the maxOv floor applies.
+		{"tight extender", &opentype.MathAssembly{MinConnectorOverlap: 4,
+			Parts: []opentype.MathAssemblyPart{part(20, 0, 9, false), part(20, 2, 2, true),
+				part(20, 9, 0, false)}}, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			b := e.assembleVertical(c.asm, 100, 10, clsOpen)
+			if got := b != nil; got != c.want {
+				t.Errorf("assembly built = %v, want %v", got, c.want)
+			}
+			if b != nil && b.h <= 0 {
+				t.Errorf("assembled height %.3f, an assembly has positive extent", b.h)
+			}
+		})
 	}
 }
