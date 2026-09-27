@@ -455,7 +455,8 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 		left := name == "overleftarrow" || name == "overleftrightarrow"
 		right := name != "overleftarrow"
 		return e.overArrow(b, left, right, sty), clsOrd, false, r, nil
-	case "text", "textrm", "textnormal", "mbox", "hbox", "mathrm", "mathbf", "mathbb", "mathds", "mathbbm", "mathbbmss", "mathbbb", "mathcal", "mathscr", "EuScript", "mathfrak", "mathsf", "mathtt", "mathit", "boldsymbol":
+	case "text", "textrm", "textnormal", "mbox", "hbox", "mathrm", "mathbf", "mathbb", "mathds", "mathbbm", "mathbbmss", "mathbbb", "mathcal", "mathscr", "EuScript", "mathfrak", "mathsf", "mathtt", "mathit", "boldsymbol",
+		"mathbfit", "mathbold", "mathsfit", "mathsans", "mathsfbfit", "mathboldsans":
 		asty := sty
 		asty.alpha = alphabetFor(name)
 		b, r, err := e.parseGroupArg(toks, asty)
@@ -1341,8 +1342,24 @@ func alphabetFor(name string) func(rune) rune {
 		return blockMapper(0x1D400, 0x1D41A, 0x1D7CE, nil)
 	case "mathit":
 		return mathItalic
-	case "boldsymbol":
+	case "boldsymbol", "mathbfit", "mathbold":
+		// \mathbfit is unicode-math's name for bold italic and isomath's alphabet for
+		// vectors and matrices (isomath.sty:184); \mathbold is the fixmath alias
+		// isomath keeps (:189). \boldsymbol maps to the same Unicode block, so the
+		// three share one mapping rather than three copies of it.
+		//
+		// Bold italic has no digits in Unicode, so they fall back to BOLD digits — the
+		// same fallback \boldsymbol already used.
 		return blockMapper(0x1D468, 0x1D482, 0x1D7CE, nil)
+	case "mathsfit", "mathsans":
+		// Sans-serif italic. isomath declares it only under its OMLmathsfit option
+		// (isomath.sty:200) but unicode-math defines it always, and the alphabet is a
+		// mapping rather than a package, so it lives here unconditionally.
+		return blockMapper(0x1D608, 0x1D622, 0x1D7E2, nil)
+	case "mathsfbfit", "mathboldsans":
+		// Sans-serif BOLD italic — ISO 80000-2's face for tensors, which is what
+		// isomath's \tensorsym selects (isomath.sty:218 and :284).
+		return blockMapper(0x1D63C, 0x1D656, 0x1D7EC, nil)
 	case "mathsf":
 		return blockMapper(0x1D5A0, 0x1D5BA, 0x1D7E2, nil)
 	case "mathtt":
