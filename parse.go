@@ -181,6 +181,7 @@ const (
 	stopRight                    // stop at \right
 	stopCell                     // stop at & \\ or \end (matrix cell)
 	stopStackRow                 // stop at \\ or } (a \substack line)
+	stopOver                     // stop at \over (\buildrel's delimited argument)
 )
 
 // atStop reports whether toks begins with a terminator for the given mode.
@@ -194,6 +195,8 @@ func atStop(toks []token, stop stopMode) bool {
 		return t.kind == tRBrace
 	case stopRight:
 		return t.kind == tCtrl && t.text == "right"
+	case stopOver:
+		return t.kind == tCtrl && t.text == "over"
 	case stopCell:
 		return t.kind == tAmp || (t.kind == tCtrl && (t.text == `\` || t.text == "end"))
 	case stopStackRow:
@@ -208,6 +211,14 @@ func atStop(toks []token, stop stopMode) bool {
 func (e *engine) parseList(toks []token, sty style, stop stopMode) (*box, []token, error) {
 	var items []*box
 	for {
+		// The terminator is tested BEFORE the control-word switch below, because
+		// \over appears in both: as stopOver's delimiter and as the infix fraction
+		// operator. Tested after, the fraction case would fire first and swallow
+		// \buildrel's delimiter — which is why this check is here and not only at
+		// the foot of the loop.
+		if stop == stopOver && atStop(toks, stop) {
+			return e.hlist(items, sty), toks, nil
+		}
 		// style switches apply to the remainder of the list.
 		if len(toks) > 0 && toks[0].kind == tCtrl {
 			switch toks[0].text {
@@ -667,6 +678,56 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 			cls = clsRel
 		}
 		return e.overUnder(base, extra, name != "underset", sty), cls, false, r2, nil
+	case "buildrel":
+		// \buildrel <top> \over <base> — plain TeX's spelling of \stackrel, with the
+		// top argument delimited by \over instead of braced
+		// (latex.ltx:11228, \def\buildrel#1\over#2{\mathrel{\mathop{\kern\z@#2}\limits^{#1}}}).
+		//
+		// Implemented HERE as a primitive rather than as a TeX macro in the engine's
+		// substrate. A parameter delimited by a control word cannot be matched by an
+		// expander that pairs a parameter text against source TEXT, which is how a
+		// \textcolor definition with a brace-delimited parameter dropped 86 equations
+		// (go-tex/engine#452). For a command the maths layer has to traverse, a
+		// primitive beats a macro.
+		//
+		// Worth 9 equations on the arXiv census, all in one paper, which the page count
+		// does not notice.
+		// parseList and not a bare parseAtom loop: the classic idiom is
+		// \buildrel \rm def \over =, and \rm is a declarative font switch that only
+		// parseList honours. A first version scanned atoms directly and refused that
+		// very form.
+		extra, r1, err := e.parseList(toks, sty.script(e), stopOver)
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		if len(r1) == 0 || !(r1[0].kind == tCtrl && r1[0].text == "over") {
+			return nil, 0, false, nil, fmt.Errorf(`texmath: \buildrel without \over`)
+		}
+		r1 = r1[1:]
+		base, r2, err := e.parseGroupArg(r1, sty)
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		// clsRel, as \mathrel in the definition says: \buildrel builds a RELATION, so
+		// it takes thick space on both sides and not the nothing an Ord would take.
+		return e.overUnder(base, extra, true, sty), clsRel, false, r2, nil
+	case "lefteqn":
+		// \lefteqn{X}: X set in DISPLAY style with ZERO width, so it overhangs to the
+		// right and the following material sets over it — eqnarray's way of starting a
+		// long left-hand side (latex.ltx:11392,
+		// \def\lefteqn#1{\rlap{$\displaystyle #1$}}).
+		//
+		// The display style is not decoration: \lefteqn exists to be used inside
+		// eqnarray, whose cells are display style, and dropping to text style would
+		// shrink the fractions it is usually wrapped around.
+		dsty := sty
+		dsty.display, dsty.spacious = true, true
+		b, r, err := e.parseGroupArg(toks, dsty)
+		if err != nil {
+			return nil, 0, false, nil, err
+		}
+		b.w = 0
+		return b, clsOrd, false, r, nil
 	case "substack":
 		// \substack{a \\ b \\ c}: script-size lines stacked and centred, used as a
 		// multi-line sub/superscript under a big operator.
