@@ -67,6 +67,25 @@ func tokenize(s string) []token {
 			for i < len(rs) && isCtrlLetter(rs[i]) {
 				i++
 			}
+			// latex.ltx:115 is a single line: \let\bgroup={ \let\egroup=}. They are
+			// not macros that expand to braces, they ARE the brace tokens — an
+			// implicit character token, indistinguishable from { and } everywhere a
+			// group is read. So they belong here, in the scanner, and not in the
+			// symbol table or the macro list: emitting the brace token is what \let
+			// does, and every construct that reads a group then works unchanged.
+			//
+			// 446 equations over 3 papers of a 999-paper census refused on \bgroup
+			// alone (go-tex/engine#466). A paper writes them where a brace would be
+			// eaten by an argument scan — \hbox\bgroup … \egroup — and one unknown
+			// command drops the whole formula.
+			switch string(rs[start:i]) {
+			case "bgroup":
+				out = append(out, token{kind: tLBrace})
+				continue
+			case "egroup":
+				out = append(out, token{kind: tRBrace})
+				continue
+			}
 			out = append(out, token{kind: tCtrl, text: string(rs[start:i])})
 		default:
 			out = append(out, token{kind: tChar, text: string(c), r: c})
