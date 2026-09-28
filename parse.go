@@ -1679,10 +1679,30 @@ type sym struct {
 	cls atomClass
 }
 
+// accents maps an accent command to the SPACING modifier letter that draws it — U+02C6
+// and not the combining U+0302, because a combining character has no width and cannot be
+// placed; accent() positions the glyph itself.
+//
+// ⛔ The wide forms are NOT stretched. \widehat and \widetilde have always taken the same
+// fixed glyph as \hat and \tilde, and \widecheck joins them on those terms rather than
+// introducing a second kind of approximation. What that costs is measurable, and was
+// measured on the two corpus papers that write it (90 occurrences):
+//
+//	one character   84.4%  }  91% — a fixed accent is EXACT here, there is
+//	bare argument    6.7%  }        nothing to stretch over
+//	2 characters     5.6%  \
+//	7-8 characters   3.3%  /  9% — \widecheck{S\cup Z}, {CM}, {HM}: the caron is
+//	                               centred and narrower than the nucleus
+//
+// So 97 equations over 2 papers (go-tex/engine#466) render, 91% of the uses exactly, and
+// the rest with an accent the same shape as the one \widehat already draws. Stretching the
+// whole wide family is a separate piece of work, and it is the family's problem rather
+// than this entry's.
 var accents = map[string]rune{
 	"hat": 'ˆ', "widehat": 'ˆ', "bar": '¯', "vec": '⃗',
 	"tilde": '˜', "widetilde": '˜', "dot": '˙', "ddot": '¨',
-	"check": 'ˇ', "breve": '˘', "acute": '´', "grave": '`', "mathring": '˚',
+	"check": 'ˇ', "widecheck": 'ˇ', "breve": '˘', "acute": '´', "grave": '`',
+	"mathring": '˚',
 }
 
 // spaces maps a spacing command to its width in mu (em/18).
