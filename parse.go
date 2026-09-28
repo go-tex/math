@@ -38,6 +38,30 @@ func tokenize(s string) []token {
 		switch {
 		case c == ' ' || c == '\t' || c == '\n':
 			i++
+		case c == '%':
+			// latex.ltx:153 is \catcode`\%=14 — % is a COMMENT, to the end of the line.
+			//
+			// ⛔ It was being TYPESET, comment text and all: "a%commentaire\nb" measured
+			// 237.00 wide against "ab"'s 35.00 at 32px. Two hundred points of wrong ink
+			// with nothing dropped, so no channel could report it — the same blind spot a
+			// bare $ sat in. A literal percent is \%, which the symbol table serves.
+			//
+			// TeX also swallows the newline and any leading whitespace on the next line;
+			// here the spaces are skipped above anyway, so stopping at the newline is
+			// enough.
+			for i < len(rs) && rs[i] != '\n' {
+				i++
+			}
+		case c == '~':
+			// latex.ltx:306 is \catcode`\~=\active, and the active ~ is \nobreakspace
+			// (latex.ltx:6621) — a non-breaking INTERWORD SPACE, not a tilde.
+			//
+			// ⛔ It was set as a tilde glyph: "a~b" measured 53.00 against "ab"'s 35.00.
+			// Emitting the control space makes it the 6mu the space table already gives
+			// \␣, which is what an interword space is in maths. A literal tilde is
+			// \textasciitilde or \sim, neither of which this touches.
+			out = append(out, token{kind: tCtrl, text: " "})
+			i++
 		case c == '^':
 			out = append(out, token{kind: tSup})
 			i++
