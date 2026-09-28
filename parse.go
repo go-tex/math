@@ -347,6 +347,22 @@ func (e *engine) parseList(toks []token, sty style, stop stopMode) (*box, []toke
 				// which caught the same mistake in its own first draft.
 				toks = toks[1:]
 				continue
+			case "mathchoice":
+				// ⛔ A selected branch that is EMPTY must produce no atom at all, not an
+				// empty one: the spacing machinery counts an empty Ord, which is the same
+				// defect the penalties below carry a long comment about. And empty
+				// branches are the common case, not an edge one — amsmath's own \intkern@
+				// is \mathchoice{\mkern-3mu}{}{}{} and a corpus paper writes
+				// \mathchoice{}{}{\mskip-0.5mu}{\mskip-1mu}, so three of four branches
+				// are empty in each.
+				//
+				// Only the empty case is handled here. A non-empty branch falls through to
+				// parseControl so that a following script still attaches to it —
+				// \mathchoice{a}{b}{c}{d}^2 puts the 2 on the chosen body.
+				if rest, empty := e.mathchoiceEmptyBranch(toks[1:], sty); empty {
+					toks = rest
+					continue
+				}
 			case "allowbreak", "nobreak", "break":
 				// latex.ltx:598-600, three consecutive lines, all pure penalties:
 				//
@@ -647,6 +663,10 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 			return nil, 0, false, nil, err
 		}
 		return e.brace(b, name == "overbrace", sty), clsOp, false, r, nil
+	case "mathchoice":
+		return e.parseMathchoice(toks, sty)
+	case "mkern", "mskip":
+		return e.parseMuKern(name, toks, sty)
 	case "raisebox":
 		return e.parseRaisebox(toks, sty)
 	case "rule":
