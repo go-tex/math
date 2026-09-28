@@ -250,6 +250,61 @@ func (e *engine) parseList(toks []token, sty style, stop stopMode) (*box, []toke
 			case "scriptstyle":
 				sty.px, sty.display, sty.spacious, toks = e.scriptSize(sty.px), false, false, toks[1:]
 				continue
+			case "limits", "nolimits", "displaylimits",
+				"normalfont", "rmfamily", "sffamily", "ttfamily", "bfseries", "mdseries",
+				"itshape", "slshape", "scshape", "upshape", "em", "normalcolor",
+				"normalsize", "small", "footnotesize", "scriptsize", "tiny",
+				"large", "Large", "LARGE", "huge", "Huge",
+				"par", "relax", "protect", "leavevmode", "noindent", "ignorespaces":
+				// Text-mode font/size/mode switches, paragraph no-ops and
+				// script-placement modifiers that reach the maths layer through macro
+				// expansion. They carry no glyph and take no argument, so they must be
+				// transparent — an unrecognised one used to drop the whole equation
+				// (arXiv census: \normalfont 127, \par 55 dropped groups).
+				//
+				// ⛔ They USED to be handled in parseControl, returning
+				// newBox(clsOrd) — and an empty ORDINARY ATOM is not nothing. The
+				// spacing machinery counts it, so all ten of \relax, \protect,
+				// \leavevmode, \noindent, \ignorespaces, \par, \normalfont,
+				// \normalcolor, \limits and \nolimits made "a+X b" set differently
+				// from "a+b": Bin followed by an empty Ord instead of Bin followed by
+				// b. Those equations rendered, with the wrong inter-atom space, which
+				// is why no test and no page count had ever objected.
+				//
+				// Found by the byte-equality test written for the penalties below,
+				// which caught the same mistake in its own first draft.
+				toks = toks[1:]
+				continue
+			case "allowbreak", "nobreak", "break":
+				// latex.ltx:598-600, three consecutive lines, all pure penalties:
+				//
+				//   \def\break{\penalty-\@M}      forced      (-10000)
+				//   \def\nobreak{\penalty \@M}    forbidden   (+10000)
+				//   \def\allowbreak{\penalty \z@} permitted   (0)
+				//
+				// A penalty carries no ink and no width; it is a hint to the line
+				// breaker. THIS LAYER DOES NOT BREAK FORMULAS — it lays one
+				// horizontal list into one SVG — so a penalty is not something it
+				// discards, it is something it cannot express.
+				//
+				// ⛔ It belongs HERE and not among parseControl's transparent
+				// commands, which return newBox(clsOrd): an empty ORDINARY ATOM is
+				// not nothing. The spacing machinery counts it, so "a+\allowbreak b"
+				// came out different from "a+b" — Bin followed by an empty Ord
+				// instead of Bin followed by b. Consuming the token and continuing
+				// emits no atom at all, which is byte-identical by construction, and
+				// a test asserts exactly that.
+				//
+				// If formula breaking is ever added, these three become real
+				// breakpoints and this case must go, not grow.
+				//
+				// \allowbreak alone is 274 equations over 15 papers of a 999-paper
+				// census (go-tex/engine#466), and unusually for that census all 15
+				// write it in their OWN .tex rather than inherit it from a class. The
+				// other two are not in the census; they are here because they are the
+				// same fact on the two neighbouring lines of the same file.
+				toks = toks[1:]
+				continue
 			case "rm", "bf", "it", "sf", "tt", "cal", "sl":
 				// Declarative, group-scoped font switches (\rm, \bf, …): they alter
 				// the active alphabet for the REST of the current {…} group, unlike
@@ -528,19 +583,15 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 			return nil, 0, false, nil, err
 		}
 		return e.phantom(b, name), clsOrd, false, r, nil
-	case "limits", "nolimits", "displaylimits":
-		// script-placement modifiers on the preceding operator — transparent here.
-		return newBox(clsOrd), clsOrd, false, toks, nil
-	case "normalfont", "rmfamily", "sffamily", "ttfamily", "bfseries", "mdseries",
-		"itshape", "slshape", "scshape", "upshape", "em", "normalcolor",
-		"normalsize", "small", "footnotesize", "scriptsize", "tiny",
-		"large", "Large", "LARGE", "huge", "Huge",
-		"par", "relax", "protect", "leavevmode", "noindent", "ignorespaces":
-		// Text-mode font/size/mode switches and paragraph no-ops that reach the math
-		// layer through macro expansion. They carry no glyph and take no argument, so
-		// they must be transparent — an unrecognised one used to drop the whole
-		// equation (arXiv census: \normalfont 127, \par 55 dropped groups).
-		return newBox(clsOrd), clsOrd, false, toks, nil
+	case "mathstrut":
+		// latex.ltx:11200: \DeclareRobustCommand\mathstrut{\vphantom(}. Not a no-op
+		// — a phantom ( has the height and depth of a parenthesis and zero width, so
+		// it sets a minimum vertical extent for the list it sits in. Dropping it
+		// would be invisible on a single symbol and wrong wherever it does its job.
+		//
+		// 45 equations over 2 papers. It takes no argument, unlike \vphantom, which
+		// is why it cannot simply join the case below.
+		return e.phantom(e.mustGlyph('(', sty.px, clsOrd), "vphantom"), clsOrd, false, toks, nil
 	case "smash", "smashoperator":
 		// \smash[t|b]{x} typesets x with its height and/or depth suppressed. The
 		// vertical trim is not modelled here, but the CONTENT must render rather than
