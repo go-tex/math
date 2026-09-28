@@ -229,6 +229,33 @@ func atStop(toks []token, stop stopMode) bool {
 // into an hlist, stopping (without consuming) at the terminator for stop.
 func (e *engine) parseList(toks []token, sty style, stop stopMode) (*box, []token, error) {
 	var items []*box
+	// A maths-mode DELIMITER met inside a maths source — a bare $, or \( \) \[ \] —
+	// is not an atom. It is there because the engine lifted TEXT-mode content into a
+	// string this layer reads as maths: \scalebox{0.5}{$a+b$} and
+	// \raisebox{-2pt}{\text{\tiny$\bm\rightarrow$}} are both real corpus forms, and in
+	// the document the wrapper's argument genuinely IS text mode, where $ opens maths.
+	//
+	// latex.ltx says so exactly: \( is \relax\ifmmode\@badmath\else$\fi (11298) and
+	// \[ is the same with $$ (11302). Outside maths they open maths; inside, LaTeX
+	// errors. Here the source has already entered maths, so the delimiter is redundant
+	// and consuming it is what keeps the content.
+	//
+	// ⛔ Two things were wrong before, and only one of them was reported:
+	//
+	//	\( reached the layer as an unknown COMMAND and dropped the formula — 112
+	//	equations over 10 papers of a 999-paper census (go-tex/engine#466), 10 of the 10
+	//	writing it in their own .tex.
+	//
+	//	a bare $ was typeset as a DOLLAR GLYPH. $a+b$ measured 104.22 wide against
+	//	a+b's 72.22 — 32pt of spurious ink, silently, which no census can see because
+	//	nothing was dropped. A literal dollar is \$, which the symbol table already
+	//	serves.
+	//
+	// textAlpha carries the text alphabet across a nested pair: \text is an ALPHABET
+	// switch in this layer, not a mode escape, so a $ inside one must return to maths
+	// for its span and the closing $ must put the alphabet back. \text{a$b$c} sets a
+	// and c in the text face and b in maths italic, which is what the document means.
+	var textAlpha func(rune) rune
 	for {
 		// The terminator is tested BEFORE the control-word switch below, because
 		// \over appears in both: as stopOver's delimiter and as the infix fraction
@@ -237,6 +264,27 @@ func (e *engine) parseList(toks []token, sty style, stop stopMode) (*box, []toke
 		// the foot of the loop.
 		if stop == stopOver && atStop(toks, stop) {
 			return e.hlist(items, sty), toks, nil
+		}
+		// A nested maths delimiter: consume it, and swap the alphabet as described above.
+		if len(toks) > 0 {
+			isDelim := false
+			if toks[0].kind == tChar && toks[0].r == '$' {
+				isDelim = true
+			} else if toks[0].kind == tCtrl {
+				switch toks[0].text {
+				case "(", ")", "[", "]":
+					isDelim = true
+				}
+			}
+			if isDelim {
+				if sty.alpha != nil {
+					textAlpha, sty.alpha = sty.alpha, nil
+				} else if textAlpha != nil {
+					sty.alpha, textAlpha = textAlpha, nil
+				}
+				toks = toks[1:]
+				continue
+			}
 		}
 		// style switches apply to the remainder of the list.
 		if len(toks) > 0 && toks[0].kind == tCtrl {
