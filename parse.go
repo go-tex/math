@@ -540,7 +540,7 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 		left := name == "overleftarrow" || name == "overleftrightarrow"
 		right := name != "overleftarrow"
 		return e.overArrow(b, left, right, sty), clsOrd, false, r, nil
-	case "text", "textrm", "textnormal", "mbox", "hbox", "mathrm", "mathbf", "mathbb", "mathds", "mathbbm", "mathbbmss", "mathbbb", "mathcal", "mathscr", "EuScript", "mathfrak", "mathsf", "mathtt", "mathit", "boldsymbol",
+	case "text", "textrm", "textnormal", "mbox", "hbox", "mathrm", "mathbf", "mathbb", "mathds", "mathbbm", "mathbbmss", "mathbbb", "amsmathbb", "mathcal", "mathscr", "EuScript", "mathfrak", "mathsf", "mathtt", "mathit", "boldsymbol",
 		"mathbfit", "mathbold", "mathsfit", "mathsans", "mathsfbfit", "mathboldsans":
 		asty := sty
 		asty.alpha = alphabetFor(name)
@@ -1521,11 +1521,21 @@ func alphabetFor(name string) func(rune) rune {
 		return blockMapper(0x1D5A0, 0x1D5BA, 0x1D7E2, nil)
 	case "mathtt":
 		return blockMapper(0x1D670, 0x1D68A, 0x1D7F6, nil)
-	case "mathbb", "mathds", "mathbbm", "mathbbmss", "mathbbb":
+	case "mathbb", "mathds", "mathbbm", "mathbbmss", "mathbbb", "amsmathbb":
 		// \mathds (dsfont), \mathbbm (bbm), \mathbbmss (bbm sans) and \mathbbb (bbold)
 		// are all double-struck fonts — we approximate every one with the same Unicode
 		// blackboard block as \mathbb. This makes the ubiquitous \mathbbm{1} indicator
 		// (𝟙) render instead of dropping the whole equation.
+		//
+		// \amsmathbb is NOT an approximation: a paper declares it with
+		// \DeclareSymbolFontAlphabet{\amsmathbb}{AMSb}, and AMSb IS the AMS
+		// blackboard-bold font — the same alphabet \mathbb names. 251 equations over
+		// one paper of a 999-paper census (go-tex/engine#466), which is the largest
+		// single entry that needed no new glyph at all.
+		//
+		// It is a paper-chosen NAME for a standard alphabet, so the general fix is the
+		// engine honouring \DeclareSymbolFontAlphabet; this entry serves the name
+		// meanwhile and costs nothing if that lands.
 		return blockMapper(0x1D538, 0x1D552, 0x1D7D8, bbHoles)
 	case "mathcal":
 		return blockMapper(0x1D49C, 0x1D4B6, 0, calHoles)
@@ -1892,10 +1902,31 @@ var symbols = map[string]sym{
 	// point: \lhd is a binary operation, \vartriangleleft a relation, and they take
 	// different spacing. \unrhd is not in the census; it is here because it is the
 	// fourth line of the same declaration.
-	"lhd":   {'⊲', clsBin}, // U+22B2 NORMAL SUBGROUP OF — amsfonts.sty:157 [87 eq]
-	"rhd":   {'⊳', clsBin}, // U+22B3 CONTAINS AS NORMAL SUBGROUP — amsfonts.sty:159 [92 eq]
-	"unlhd": {'⊴', clsBin}, // U+22B4 NORMAL SUBGROUP OF OR EQUAL TO — amsfonts.sty:158 [2 eq]
-	"unrhd": {'⊵', clsBin}, // U+22B5 CONTAINS AS NORMAL SUBGROUP OR EQUAL — amsfonts.sty:160
+	// MnSymbol's own two, verified by Unicode name and by unicode-math's entry at each
+	// codepoint. 159 equations over 2 papers.
+	//
+	// ⛔ The paper carrying 157 of them redeclares \medsquare as \mathrel in its own
+	// modalops.sty, while MnSymbol.sty:998 says \mathbin. MnSymbol wins here because it
+	// is the package of record — and the choice is UNOBSERVABLE in that paper anyway: it
+	// writes \boxmodal{\medsquare}, which wraps the symbol in
+	// \modalop{\text{\raisebox{\scalebox{\ensuremath{…}}}}}, so an outer class governs.
+	//
+	// The paper's five other names — \medsquaredot, \medsquareminus, \medsquarevert,
+	// \medsquareplus, \medsquaretimes — are NOT MnSymbol commands, they are declared in
+	// that paper's own .sty. They are deliberately absent: a general table is not the
+	// place for one paper's names, and the fix that serves them is the engine honouring
+	// a paper's \DeclareMathSymbol. Each is used exactly ONCE in the body, against 480
+	// uses of \medsquare and 93 of \medsquaredot, so almost nothing rests on them.
+	//
+	// And \medsquarevert could not be served in any case: Unicode has no squared
+	// vertical bar, and in a paper whose subject is telling seven modalities apart, a
+	// substituted glyph would merge two of them.
+	"medsquare":  {'◻', clsBin}, // U+25FB WHITE MEDIUM SQUARE — MnSymbol.sty:998 [157 eq]
+	"meddiamond": {'◇', clsBin}, // U+25C7 WHITE DIAMOND — MnSymbol.sty:1005 [2 eq]
+	"lhd":        {'⊲', clsBin}, // U+22B2 NORMAL SUBGROUP OF — amsfonts.sty:157 [87 eq]
+	"rhd":        {'⊳', clsBin}, // U+22B3 CONTAINS AS NORMAL SUBGROUP — amsfonts.sty:159 [92 eq]
+	"unlhd":      {'⊴', clsBin}, // U+22B4 NORMAL SUBGROUP OF OR EQUAL TO — amsfonts.sty:158 [2 eq]
+	"unrhd":      {'⊵', clsBin}, // U+22B5 CONTAINS AS NORMAL SUBGROUP OR EQUAL — amsfonts.sty:160
 	// \bigcirc is NOT \circ: U+25CB is the WHITE CIRCLE, U+2218 the much smaller RING
 	// OPERATOR this table already holds as \circ. Here fontmath and unicode-math agree
 	// on the class for once.

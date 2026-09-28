@@ -372,3 +372,76 @@ func TestTheDisputedClassesAreVisibleInTheRender(t *testing.T) {
 		t.Error(`\intop (Op) spaces like \blacklozenge (Ord)`)
 	}
 }
+
+// \amsmathbb is the largest census entry that needed no new glyph: 251 equations over one
+// paper, which declares it with \DeclareSymbolFontAlphabet{\amsmathbb}{AMSb}. AMSb IS the
+// AMS blackboard-bold font, so unlike \mathds/\mathbbm/\mathbbb this is not an
+// approximation of a different double-struck face — it is the same alphabet \mathbb names,
+// and the test asserts that equality rather than a rendered shape.
+func TestAmsmathbbIsMathbbAndNotAnApproximation(t *testing.T) {
+	r := newRenderer(t)
+	svg := func(tex string) string {
+		t.Helper()
+		s, err := r.RenderDisplaySVG(tex, 32)
+		if err != nil {
+			t.Fatalf("render(%q): %v", tex, err)
+		}
+		return s
+	}
+	for _, body := range []string{"P", "R", "ZQ", "1"} {
+		if a, b := svg(`\amsmathbb{`+body+`}`), svg(`\mathbb{`+body+`}`); a != b {
+			t.Errorf(`\amsmathbb{%s} does not set as \mathbb{%s}`, body, body)
+		}
+	}
+	// And it is genuinely the blackboard alphabet, not a pass-through: \amsmathbb{P}
+	// must differ from a bare P.
+	if svg(`\amsmathbb{P}`) == svg(`P`) {
+		t.Error(`\amsmathbb{P} sets as a plain P: the alphabet is not being applied`)
+	}
+}
+
+// MnSymbol's two, and the five paper-local names that stay out. The class comes from
+// MnSymbol.sty:998 (\mathbin) and not from the one paper's modalops.sty (\mathrel),
+// because MnSymbol is the package of record — and the choice is unobservable in that
+// paper, which wraps the symbol in \boxmodal{…}.
+func TestMnSymbolsTwoAndNotThePapersFive(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		r    rune
+		src  string
+	}{
+		{"medsquare", 0x25FB, "MnSymbol.sty:998"},
+		{"meddiamond", 0x25C7, "MnSymbol.sty:1005"},
+	} {
+		s, ok := symbols[c.name]
+		if !ok {
+			t.Errorf(`\%s is not in the table (%s)`, c.name, c.src)
+			continue
+		}
+		if s.r != c.r {
+			t.Errorf(`\%s = U+%04X, want U+%04X`, c.name, s.r, c.r)
+		}
+		if s.cls != clsBin {
+			t.Errorf(`\%s class = %d, want clsBin (%s says \mathbin)`, c.name, s.cls, c.src)
+		}
+	}
+	// ⛔ These are declared in ONE paper's own modalops.sty, not by MnSymbol. A general
+	// table is not the place for one paper's names, and \medsquarevert could not be
+	// served anyway: Unicode has no squared vertical bar.
+	for _, name := range []string{
+		"medsquaredot", "medsquareminus", "medsquarevert",
+		"medsquareplus", "medsquaretimes", "medsquarefilled",
+	} {
+		if s, ok := symbols[name]; ok {
+			t.Errorf(`\%s is in the table as %U: it is one paper's own name, not MnSymbol's`,
+				name, s.r)
+		}
+	}
+	// \medsquare must not collide with the box operators that share its shape family:
+	// U+25FB is the WHITE MEDIUM SQUARE, distinct from \boxdot, \boxminus and friends.
+	for _, other := range []string{"boxdot", "boxminus", "boxplus", "boxtimes"} {
+		if symbols["medsquare"].r == symbols[other].r {
+			t.Errorf(`\medsquare and \%s are both %U`, other, symbols[other].r)
+		}
+	}
+}
