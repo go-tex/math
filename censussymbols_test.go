@@ -5,6 +5,7 @@ package math
 
 import (
 	gomath "math"
+	"strings"
 	"testing"
 )
 
@@ -213,5 +214,161 @@ func TestADelimiterPairIsAddedAsAPair(t *testing.T) {
 	}
 	if _, ok := symbols["lrcorner"]; !ok {
 		t.Error(`\lrcorner is missing: the census names it directly, 152 equations`)
+	}
+}
+
+// ⛔ The second crop, and the reason there WAS a second crop: my sweep looked
+// unicode-math-table.tex up BY NAME, and unicode-math uses different names for glyphs
+// amssymb already had. \rhd, \bigcirc and \blacklozenge each reported "no codepoint
+// exists" while their codepoints sat in the table as \vartriangleright,
+// \mdlgwhtcircle and \mdlgblklozenge. A name-keyed lookup turns a naming difference
+// into a false absence.
+//
+// These four are amsfonts' \mathbin ALIASES of glyphs this table already holds as
+// \mathrel (amsfonts.sty:157-160). The class is the only difference and it is the
+// whole point — \lhd is a binary operation, \vartriangleleft a relation — so the test
+// asserts the SAME rune and a DIFFERENT class, which is the only pair of facts that
+// can be got wrong here.
+func TestTheAmsfontsBinaryAliasesShareTheGlyphAndNotTheClass(t *testing.T) {
+	for _, c := range []struct{ bin, rel string }{
+		{"lhd", "vartriangleleft"},
+		{"rhd", "vartriangleright"},
+		{"unlhd", "trianglelefteq"},
+		{"unrhd", "trianglerighteq"},
+	} {
+		b, ok1 := symbols[c.bin]
+		r, ok2 := symbols[c.rel]
+		if !ok1 || !ok2 {
+			t.Errorf(`\%s present=%v, \%s present=%v`, c.bin, ok1, c.rel, ok2)
+			continue
+		}
+		if b.r != r.r {
+			t.Errorf(`\%s = %U but \%s = %U: amsfonts declares the same glyph`,
+				c.bin, b.r, c.rel, r.r)
+		}
+		if b.cls != clsBin {
+			t.Errorf(`\%s class = %d, want clsBin (amsfonts)`, c.bin, b.cls)
+		}
+		if r.cls != clsRel {
+			t.Errorf(`\%s class = %d, want clsRel`, c.rel, r.cls)
+		}
+	}
+	// And the spacing really differs, which is why the alias is worth having: a Bin
+	// and a Rel take different inter-atom space, so a\lhd b and a\vartriangleleft b
+	// must not render alike.
+	r := newRenderer(t)
+	svg := func(tex string) string {
+		t.Helper()
+		s, err := r.RenderDisplaySVG(tex, 32)
+		if err != nil {
+			t.Fatalf("render(%q): %v", tex, err)
+		}
+		return s
+	}
+	if svg(`a\lhd b`) == svg(`a\vartriangleleft b`) {
+		t.Error(`\lhd and \vartriangleleft render alike: the class is not reaching the spacing`)
+	}
+}
+
+// \bigcirc is NOT \circ. U+25CB is the WHITE CIRCLE and U+2218 the much smaller RING
+// OPERATOR this table already held; mapping \bigcirc to \circ's rune would have been
+// invisible in every extents test and wrong on every display.
+func TestBigcircIsNotCirc(t *testing.T) {
+	big, small := symbols["bigcirc"], symbols["circ"]
+	if big.r == small.r {
+		t.Fatalf(`\bigcirc and \circ are both %U`, big.r)
+	}
+	if big.r != 0x25CB {
+		t.Errorf(`\bigcirc = U+%04X, want U+25CB WHITE CIRCLE`, big.r)
+	}
+	if small.r != 0x2218 {
+		t.Errorf(`\circ = U+%04X, want U+2218 RING OPERATOR`, small.r)
+	}
+}
+
+// The ones deliberately left out, each because no codepoint carries the meaning. This
+// is \llceil's rule applied four more times, and it is asserted so that a later sweep
+// cannot quietly add a plausible-looking wrong character.
+//
+// \nsubseteqq is the one worth naming: my first proposal was U+2AC5, and checking the
+// Unicode NAME showed U+2AC5 is "SUBSET OF ABOVE EQUALS SIGN" — \subseteqq ITSELF, not
+// its negation. There is no precomposed negated form.
+func TestTheSymbolsWithNoCodepointStayOut(t *testing.T) {
+	for _, name := range []string{"moo", "fatsemi", "lhook", "nsubseteqq"} {
+		if s, ok := symbols[name]; ok {
+			t.Errorf(`\%s is in the table as %U: no codepoint carries its meaning`, name, s.r)
+		}
+	}
+	// A guard on the specific wrong answer: U+2AC5 must not appear under a negated
+	// name anywhere in the table.
+	for name, s := range symbols {
+		if s.r == 0x2AC5 && strings.HasPrefix(name, "n") {
+			t.Errorf(`\%s = U+2AC5, which is \subseteqq itself and not a negation`, name)
+		}
+	}
+}
+
+// ⛔ Three ablations passed: making \blacklozenge a Bin, \lightning a Rel and \intop an
+// Ord broke NOTHING. Each is a place where the DECLARING PACKAGE disagrees with
+// unicode-math, which is precisely the decision this table claims to make — and no test
+// held it. The gap is closed by asserting each class against its citation, and by a
+// spacing witness for the ones where the class is observable in the render.
+func TestEachClassIsPinnedToItsDeclaringPackage(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		want atomClass
+		src  string
+	}{
+		{"lhd", clsBin, "amsfonts.sty:157"},
+		{"rhd", clsBin, "amsfonts.sty:159"},
+		{"unlhd", clsBin, "amsfonts.sty:158"},
+		{"unrhd", clsBin, "amsfonts.sty:160"},
+		{"bigcirc", clsBin, "fontmath.ltx:294"},
+		{"blacklozenge", clsOrd, "amssymb.sty:51 — unicode-math says mathbin"},
+		{"lightning", clsOrd, "stmaryrd.sty:122 — unicode-math says mathrel"},
+		{"smallsmile", clsRel, "amssymb.sty:140"},
+		{"smallfrown", clsRel, "amssymb.sty:141"},
+		{"intop", clsOp, "fontmath.ltx:253 — \\int with \\displaylimits"},
+	} {
+		s, ok := symbols[c.name]
+		if !ok {
+			t.Errorf(`\%s is not in the table`, c.name)
+			continue
+		}
+		if s.cls != c.want {
+			t.Errorf(`\%s class = %d, want %d (%s)`, c.name, s.cls, c.want, c.src)
+		}
+	}
+}
+
+// The classes above are not bookkeeping: they are the spacing. Each pair below differs
+// ONLY in class, so an identical render means the class never reached the layout — which
+// is what let three ablations pass.
+func TestTheDisputedClassesAreVisibleInTheRender(t *testing.T) {
+	r := newRenderer(t)
+	svg := func(tex string) string {
+		t.Helper()
+		s, err := r.RenderDisplaySVG(tex, 32)
+		if err != nil {
+			t.Fatalf("render(%q): %v", tex, err)
+		}
+		return s
+	}
+	// \blacklozenge is Ord where unicode-math says Bin: it must set TIGHTER than a Bin
+	// with the same glyph would. \bigcirc is a Bin, so the two must differ.
+	if svg(`a\blacklozenge b`) == svg(`a\bigcirc b`) {
+		t.Error(`\blacklozenge (Ord) spaces like \bigcirc (Bin): the classes are not reaching the layout`)
+	}
+	// \lightning is Ord where unicode-math says Rel. Against a known Rel with a
+	// comparable glyph, the space must differ.
+	if svg(`a\lightning b`) == svg(`a\rightarrow b`) {
+		t.Error(`\lightning (Ord) spaces like \rightarrow (Rel)`)
+	}
+	// \intop is an Op, so it takes the operator space \int does — and NOT an Ord's.
+	if svg(`\intop x`) != svg(`\int x`) {
+		t.Error(`\intop does not set as \int: fontmath.ltx:253 makes them the same glyph and class`)
+	}
+	if svg(`a\intop b`) == svg(`a\blacklozenge b`) {
+		t.Error(`\intop (Op) spaces like \blacklozenge (Ord)`)
 	}
 }

@@ -1878,6 +1878,49 @@ var symbols = map[string]sym{
 	// first unknown and the census would name it — the absence is in the place that
 	// answers the question, which is why this is not the same argument as the three
 	// above.
+	// ── 9 more the census named, and the reason they were missed the first time is a
+	// defect in my own sweep: it looked unicode-math-table.tex up BY NAME, and
+	// unicode-math uses DIFFERENT names for glyphs amssymb already had. So \rhd,
+	// \bigcirc and \blacklozenge all reported "no codepoint exists" when the
+	// codepoint was in the table under \vartriangleright, \mdlgwhtcircle and
+	// \mdlgblklozenge. Each entry below is verified twice: by the Unicode character
+	// NAME, and by unicode-math's own entry at that codepoint.
+	//
+	// Four of them are amsfonts' \mathbin ALIASES of glyphs this table already holds
+	// as \mathrel — the documented amssymb pair, declared on four consecutive lines
+	// (amsfonts.sty:157-160). The class is the only difference and it is the whole
+	// point: \lhd is a binary operation, \vartriangleleft a relation, and they take
+	// different spacing. \unrhd is not in the census; it is here because it is the
+	// fourth line of the same declaration.
+	"lhd":   {'⊲', clsBin}, // U+22B2 NORMAL SUBGROUP OF — amsfonts.sty:157 [87 eq]
+	"rhd":   {'⊳', clsBin}, // U+22B3 CONTAINS AS NORMAL SUBGROUP — amsfonts.sty:159 [92 eq]
+	"unlhd": {'⊴', clsBin}, // U+22B4 NORMAL SUBGROUP OF OR EQUAL TO — amsfonts.sty:158 [2 eq]
+	"unrhd": {'⊵', clsBin}, // U+22B5 CONTAINS AS NORMAL SUBGROUP OR EQUAL — amsfonts.sty:160
+	// \bigcirc is NOT \circ: U+25CB is the WHITE CIRCLE, U+2218 the much smaller RING
+	// OPERATOR this table already holds as \circ. Here fontmath and unicode-math agree
+	// on the class for once.
+	"bigcirc": {'○', clsBin}, // U+25CB WHITE CIRCLE — fontmath.ltx:294 [70 eq]
+	// amssymb says \mathord where unicode-math's \mdlgblklozenge says mathbin; the
+	// package that declares the command wins, as everywhere in this table.
+	"blacklozenge": {'⧫', clsOrd}, // U+29EB BLACK LOZENGE — amssymb.sty:51 [62 eq]
+	// stmaryrd says \mathord where unicode-math's \downzigzagarrow says mathrel.
+	"lightning": {'↯', clsOrd}, // U+21AF DOWNWARDS ZIGZAG ARROW — stmaryrd.sty:122 [14 eq]
+	// AMS's small variants. Unicode has no small smile or frown, exactly as it has no
+	// small set minus, so these take the same codepoints as \smile and \frown and set
+	// alike — right in meaning, one size too large. Stated rather than hidden.
+	"smallsmile": {'⌣', clsRel}, // U+2323 — amssymb.sty:140, renders as \smile [3 eq]
+	"smallfrown": {'⌢', clsRel}, // U+2322 — amssymb.sty:141, renders as \frown [2 eq]
+	// \intop is \int with \displaylimits (fontmath.ltx:253); same glyph, and clsOp is
+	// what puts the limits where \nolimits/\limits then move them.
+	"intop": {'∫', clsOp}, // U+222B — fontmath.ltx:253 [2 eq]
+	//
+	// ⛔ LEFT OUT, and each for the reason \llceil is out — no codepoint carries the
+	// meaning, and a wrong character on a display is worse than a reported drop:
+	//
+	//   \moo (52 eq) and \fatsemi (1) are stmaryrd's own glyphs in the stmry font.
+	//   \lhook (3) is a Computer Modern PIECE of \hookrightarrow, not a character.
+	//   \nsubseteqq (1) has no precomposed negation: U+2AC5 is \subseteqq ITSELF,
+	//   which is what my first proposal got wrong until the Unicode name was checked.
 	"rrparenthesis":      {'\u2988', clsClose}, // z notation right image bracket — stmaryrd.sty:170 [31 eq]
 	"urcorner":           {'\u231D', clsClose}, // upper right corner — amsfonts.sty:75 [11 eq]
 	"rbrack":             {']', clsClose},      // latex.ltx:565 is \def\rbrack{]} — literally the character [1 eq]
