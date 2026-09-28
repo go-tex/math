@@ -147,23 +147,32 @@ type style struct {
 	display  bool            // display style (limits above/below, larger stacks)
 	spacious bool            // apply inter-atom spacing (off inside scripts)
 	alpha    func(rune) rune // active letter alphabet (nil = math italic)
+	// level counts the SCRIPT nesting: 0 for display or text style, 1 for script, 2
+	// and beyond for scriptscript. px shrinks with it but cannot replace it, because
+	// nothing here records the base size to compare against — which is why \mathchoice
+	// could not be implemented before.
+	//
+	// TeX has eight styles (D D' T T' S S' SS SS') and \mathchoice picks by FOUR, the
+	// cramped variants choosing as their uncramped partner does, so a count of script
+	// levels plus the display flag is the whole of what it needs.
+	level int
 }
 
 // script returns the style for scripts of the current level.
 func (s style) script(e *engine) style {
-	return style{px: e.scriptSize(s.px), spacious: false, alpha: s.alpha}
+	return style{px: e.scriptSize(s.px), spacious: false, alpha: s.alpha, level: s.level + 1}
 }
 
 // scriptScript returns the style of a SECOND-order script — what a radical's
 // degree is set in: "\setbox\rootbox\hbox{$\m@th\scriptscriptstyle{#1}$}"
 // (latex.ltx:11187).
 func (s style) scriptScript(e *engine) style {
-	return style{px: e.scriptScriptSize(s.px), spacious: false, alpha: s.alpha}
+	return style{px: e.scriptScriptSize(s.px), spacious: false, alpha: s.alpha, level: s.level + 2}
 }
 
 // inner returns the text-style context for matrix cells and the like.
 func (s style) inner() style {
-	return style{px: s.px, spacious: s.spacious, alpha: s.alpha}
+	return style{px: s.px, spacious: s.spacious, alpha: s.alpha, level: s.level}
 }
 
 // fracInner returns the style a fraction's numerator and denominator are set in.
@@ -175,9 +184,11 @@ func (s style) inner() style {
 // carrying one is set ~27% further apart than its neighbours.
 func (s style) fracInner(e *engine) style {
 	if s.display {
-		return style{px: s.px, spacious: s.spacious, alpha: s.alpha}
+		return style{px: s.px, spacious: s.spacious, alpha: s.alpha, level: s.level}
 	}
-	return style{px: e.scriptSize(s.px), spacious: s.spacious, alpha: s.alpha}
+	// Appendix G rule 15b moves a TEXT-style fraction's parts one style down, which is
+	// one script level; a display-style one stays put.
+	return style{px: e.scriptSize(s.px), spacious: s.spacious, alpha: s.alpha, level: s.level + 1}
 }
 
 // ── atom classes & boxes ────────────────────────────────────────────────────
