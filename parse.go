@@ -665,6 +665,16 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 		return e.brace(b, name == "overbrace", sty), clsOp, false, r, nil
 	case "mathchoice":
 		return e.parseMathchoice(toks, sty)
+	case "ooalign":
+		return e.parseOoalign(toks, sty)
+	case "hidewidth":
+		// \hskip\hideskip = −1000pt plus 1fill (latex.ltx:492,615). Outside an alignment it
+		// has no meaning this layer can give it: the negative width is absorbed by the
+		// infinite stretch against the column's edge, and there is no column here. It is
+		// CONSUMED rather than turned into a −1000pt kern, which would move the rest of the
+		// formula a foot to the left. Inside \ooalign it is read by stripHidewidth, which
+		// never lets it reach this case.
+		return newBox(clsOrd), clsOrd, false, toks, nil
 	case "mkern", "mskip":
 		return e.parseMuKern(name, toks, sty)
 	case "raisebox":
