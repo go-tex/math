@@ -27,7 +27,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: stable
+          go-version: "1.27.1"
       - if: runner.os != 'Windows'
         uses: ruby/setup-ruby@v1
         with:
@@ -64,7 +64,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: stable
+          go-version: "1.27.1"
       - run: go env GOARCH && go test ./...
 
   arch-qemu:
@@ -84,8 +84,22 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: stable
+          go-version: "1.27.1"
       - run: sudo apt-get update && sudo apt-get install -y qemu-user-static
+      # loong64 runs here, and that is worth a note: go1.27.0/1.27.1 miscompile
+      # SOME packages for loong64 (golang/go#81000 -- TRUNCDW is declared with a
+      # floating-point output while producing an integer, so a byte-sized value
+      # that inherits an FP register is spilled with an 8-byte MOVD and clobbers
+      # its neighbour; the backport, golang/go#81147, is still open at the 1.27.2
+      # milestone). go-gfx/gfx pins THIS lane to 1.26.4 for exactly that reason,
+      # established on real LoongArch silicon.
+      #
+      # This package is not affected, and that is measured rather than assumed:
+      # its loong64 qemu job passed on 2026-09-29 with `stable` resolving to
+      # go1.27.1 ("Setup go version spec stable" / "go version go1.27.1"). The
+      # defect needs a float-to-int conversion feeding a byte-sized value; there
+      # is none here. If this lane ever fails on loong64 alone, pin it to 1.26.4
+      # with a pointer to #81147 rather than looking for a bug in this code.
       - name: Test under qemu (${{ matrix.goarch }})
         run: GOARCH=${{ matrix.goarch }} go test -exec=${{ matrix.qemu }} ./...
 
@@ -100,6 +114,6 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: stable
+          go-version: "1.27.1"
       - name: Build ${{ matrix.goos }}/wasm
         run: GOOS=${{ matrix.goos }} GOARCH=wasm go build ./...
