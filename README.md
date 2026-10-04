@@ -115,6 +115,19 @@ Statement coverage is held at **100%** (parser, layout, and error paths), `go
 vet` clean, and green across the six 64-bit Go targets plus `js/wasm` and
 `wasip1/wasm`.
 
+The toolchain is **pinned to Go 1.27.1** in every lane rather than tracking
+`stable`, which is what those lanes already resolved to — a pin makes the version a
+stated fact instead of whatever the runner picked that morning, and it is what keeps a
+coverage figure meaningful: 1.27 counts statements more finely than 1.26, so a number
+measured with a different toolchain than the gate's is an upper bound. Here it is 100%
+under both, and `go.mod` now asks for the version CI uses.
+
+`loong64` runs under qemu here. Go 1.27 miscompiles *some* packages for that
+architecture (`golang/go#81000`, backport still open at the 1.27.2 milestone) and a
+sibling repository pins that one lane to 1.26.4 because of it. This package is not
+affected, measured rather than assumed: its loong64 job passed under go1.27.1 before
+this pin existed.
+
 ```sh
 go test ./...
 ```
