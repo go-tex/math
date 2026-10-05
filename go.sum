@@ -1,2 +1,6 @@
-github.com/go-opentype/opentype v0.13.0 h1:q9K7IGDfwMP/ik51ZkwiYf6jbaqPfocvAIuojetd0UQ=
-github.com/go-opentype/opentype v0.13.0/go.mod h1:AOixevJf7XQaH7+WG+OMIOZEbYPXfMqklVk26Y6YTUU=
+github.com/andybalholm/brotli v1.2.6 h1:ftYnfj6usCp+UGV5kSJ3+chpMQgU+gJf/AxsUQ52REI=
+github.com/andybalholm/brotli v1.2.6/go.mod h1:rzTDkvFWvIrjDXZHkuS16NPggd91W3kUSvPlQ1pLaKY=
+github.com/go-opentype/opentype v0.15.0 h1:ioE3eCbNZavlk/w073J3uX5FKjqhgOHQw+wZZdJ+gE4=
+github.com/go-opentype/opentype v0.15.0/go.mod h1:ZB31jTJl2mhPESXYMuUW+p36UrOabw/2+6mtyh/vNnI=
+github.com/xyproto/randomstring v1.0.5 h1:YtlWPoRdgMu3NZtP45drfy1GKoojuR7hmRcnhZqKjWU=
+github.com/xyproto/randomstring v1.0.5/go.mod h1:rgmS5DeNXLivK7YprL0pY+lTuhNQW3iGxZ18UQApw/E=
