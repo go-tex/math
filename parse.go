@@ -119,6 +119,7 @@ func tokenize(s string) []token {
 		case c == '\\':
 			i++
 			start := i
+			wasText := pendingText // \text\bgroup … \egroup: \bgroup IS the brace
 			pendingText = false
 			if i < len(rs) && !isCtrlLetter(rs[i]) { // control symbol like \{ \\ \, \|
 				i++
@@ -142,10 +143,11 @@ func tokenize(s string) []token {
 			switch string(rs[start:i]) {
 			case "bgroup":
 				depth++
-				if pendingText && textDepth == 0 {
+				if wasText && textDepth == 0 {
 					textDepth = depth
 				}
 				out = append(out, token{kind: tLBrace})
+				i = skipBlanks(rs, i) // a blank after a control word ends the word
 				continue
 			case "egroup":
 				if depth == textDepth {
@@ -153,6 +155,7 @@ func tokenize(s string) []token {
 				}
 				depth--
 				out = append(out, token{kind: tRBrace})
+				i = skipBlanks(rs, i)
 				continue
 			case "text", "textrm", "textnormal", "mbox", "hbox":
 				pendingText = true
@@ -167,6 +170,14 @@ func tokenize(s string) []token {
 		}
 	}
 	return out
+}
+
+// skipBlanks returns the index of the first rune at or after i that is not a blank.
+func skipBlanks(rs []rune, i int) int {
+	for i < len(rs) && (rs[i] == ' ' || rs[i] == '\t' || rs[i] == '\n') {
+		i++
+	}
+	return i
 }
 
 // isCtrlLetter reports whether r may appear in a control WORD. TeX reads a control

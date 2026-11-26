@@ -42,6 +42,7 @@ func TestTextKeepsItsInterwordSpaces(t *testing.T) {
 		{`\mbox{a b}`, glued + space}, // the other text wrappers
 		{`\textrm{a b}`, glued + space},
 		{`\text{a{ }b}`, glued + space},                // a nested group is still text
+		{`\text\bgroup a b\egroup`, glued + space},     // \bgroup/\egroup are the braces
 		{`\text{$x$ $y$}`, w(`\text{$x$$y$}`) + space}, // but $…$ is maths: no space inside
 		{`\text{$x + y$}`, w(`\text{$x+y$}`)},
 	} {
