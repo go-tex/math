@@ -33,11 +33,38 @@ type token struct {
 func tokenize(s string) []token {
 	var out []token
 	rs := []rune(s)
+	// Text-mode spans. amstext.sty typesets \text's argument in an \hbox in TEXT mode,
+	// where a space is interword glue (an hbox keeps it, leading and trailing too);
+	// maths mode discards it. This layer reads \text as an alphabet switch, so the
+	// tokenizer is where the span is known: inside the braces that follow \text, \mbox,
+	// \hbox, \textrm or \textnormal a run of blanks becomes ONE control space — the 6mu
+	// (a third of an em) that is cmr10's interword space — except between a pair of $,
+	// which is maths again.
+	var (
+		pendingText bool // the last control word was a text wrapper; its { is next
+		textDepth   int  // brace depth at which the open text span closes; 0 = none
+		depth       int
+		mathIn      bool // inside a nested $…$ of a text span
+		lastSpace   bool // the previous token was the space this span emitted
+	)
 	for i := 0; i < len(rs); {
 		c := rs[i]
+		if c != ' ' && c != '\t' && c != '\n' {
+			lastSpace = false
+			if c != '{' && c != '\\' && c != '%' {
+				pendingText = false
+			}
+		}
 		switch {
 		case c == ' ' || c == '\t' || c == '\n':
+			// A blank after a control WORD ends the word and is not a space (TeXbook ch. 8).
+			afterWord := len(out) > 0 && out[len(out)-1].kind == tCtrl && isCtrlLetter([]rune(out[len(out)-1].text)[0])
+			if textDepth > 0 && !mathIn && !lastSpace && !afterWord {
+				out = append(out, token{kind: tCtrl, text: " "})
+				lastSpace = true
+			}
 			i++
+			continue
 		case c == '%':
 			// latex.ltx:153 is \catcode`\%=14 — % is a COMMENT, to the end of the line.
 			//
@@ -69,9 +96,18 @@ func tokenize(s string) []token {
 			out = append(out, token{kind: tSub})
 			i++
 		case c == '{':
+			depth++
+			if pendingText && textDepth == 0 {
+				textDepth = depth
+			}
+			pendingText = false
 			out = append(out, token{kind: tLBrace})
 			i++
 		case c == '}':
+			if depth == textDepth {
+				textDepth, mathIn = 0, false
+			}
+			depth--
 			out = append(out, token{kind: tRBrace})
 			i++
 		case c == '&':
@@ -83,6 +119,7 @@ func tokenize(s string) []token {
 		case c == '\\':
 			i++
 			start := i
+			pendingText = false
 			if i < len(rs) && !isCtrlLetter(rs[i]) { // control symbol like \{ \\ \, \|
 				i++
 				out = append(out, token{kind: tCtrl, text: string(rs[start:i])})
@@ -104,14 +141,27 @@ func tokenize(s string) []token {
 			// command drops the whole formula.
 			switch string(rs[start:i]) {
 			case "bgroup":
+				depth++
+				if pendingText && textDepth == 0 {
+					textDepth = depth
+				}
 				out = append(out, token{kind: tLBrace})
 				continue
 			case "egroup":
+				if depth == textDepth {
+					textDepth, mathIn = 0, false
+				}
+				depth--
 				out = append(out, token{kind: tRBrace})
 				continue
+			case "text", "textrm", "textnormal", "mbox", "hbox":
+				pendingText = true
 			}
 			out = append(out, token{kind: tCtrl, text: string(rs[start:i])})
 		default:
+			if c == '$' && textDepth > 0 {
+				mathIn = !mathIn
+			}
 			out = append(out, token{kind: tChar, text: string(c), r: c})
 			i++
 		}
