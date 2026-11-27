@@ -54,3 +54,18 @@ func TestVariantIsChosenOnItsUnroundedAdvance(t *testing.T) {
 			"(14.27) must be taken", past.h+past.d, reached.h+reached.d)
 	}
 }
+
+// tex.web §762 (make_left_right): the target is max(delta1/500*901, 2*delta1-5pt).
+func TestDelimiterTargetIsSection762(t *testing.T) {
+	for _, c := range []struct{ delta1, want float64 }{
+		{6, 10.812}, // the factor wins: 1.802 x 6
+		{20, 36.04}, // still the factor: 36.04 against 35
+		{30, 55},    // the shortfall wins: 60 - 5 against 54.06
+		{100, 195},  // far out the shortfall always wins
+		{0, 0},      // nothing to span
+	} {
+		if got := delimiterTarget(c.delta1); gomath.Abs(got-c.want) > 1e-9 {
+			t.Errorf("delimiterTarget(%v) = %v, want %v", c.delta1, got, c.want)
+		}
+	}
+}

@@ -1109,9 +1109,30 @@ func (e *engine) axisCentre(b *box, px int) *box {
 	return out
 }
 
+// delimiterFactor and delimiterShortfall are plain.tex's \delimiterfactor=901 and
+// \delimitershortfall=5pt (ltplain.dtx:847, :881), both inherited by LaTeX.
+const (
+	delimiterFactor    = 901
+	delimiterShortfall = 5.0 // pt; the engine's px is the point size
+)
+
+// delimiterTarget is the size \left...\right asks of its delimiters, tex.web §762
+// (make_left_right): delta1 is the distance of the content's farthest edge from the
+// axis, and the target is the larger of delta1/500*\delimiterfactor and
+// 2*delta1 - \delimitershortfall. So a delimiter may fall up to 5pt (or 9.9%) SHORT
+// of the content, and the first variant of height+depth >= that is taken.
+//
+// This was not needed while every variant's advance was rounded to a whole point:
+// a 11.87 variant read 12 and reached a 12.36 target by luck. With the unrounded
+// advances it does not, and without the shortfall a one-row pmatrix took the next
+// variant (14.27) where tectonic keeps 11.87 (total 12.00).
+func delimiterTarget(delta1 float64) float64 {
+	return gomath.Max(delta1/500*delimiterFactor, 2*delta1-delimiterShortfall)
+}
+
 // delimited wraps content in stretchy left/right delimiters (0 rune = none).
 func (e *engine) delimited(inner *box, open, close rune, sty style) *box {
-	return e.delimitedTo(inner, open, close, 2*gomath.Max(inner.h-e.axis(sty.px), inner.d+e.axis(sty.px)), sty)
+	return e.delimitedTo(inner, open, close, delimiterTarget(gomath.Max(inner.h-e.axis(sty.px), inner.d+e.axis(sty.px))), sty)
 }
 
 // Fraction delimiter sizes, in em. TeX does not size the delimiters of

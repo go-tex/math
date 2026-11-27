@@ -74,8 +74,12 @@ func TestRowsStackOnStrutsWithNoInterlineGlue(t *testing.T) {
 		// cases carries \arraystretch 1.2, so 3 x 14.40 of rows — but BOTH totals here
 		// are the brace's, not the rows': 16.67 at one row and 45.00 at three. See the
 		// note above for why the three-row figure moved away from the reference.
+		// Re-pinned for unrounded MATH values and \left...\right's \delimitershortfall
+		// (tex.web §762): the brace no longer overshoots the rows, so both totals are
+		// the rows' own, 14.40 and 3 x 14.40. They were 16.67 and 45.00 when every
+		// variant's advance was rounded up to a whole point.
 		{"cases", `\begin{cases}x & y\end{cases}`,
-			`\begin{cases}x & y\\x & y\\x & y\end{cases}`, 16.67, 45.00},
+			`\begin{cases}x & y\\x & y\\x & y\end{cases}`, 14.40, 43.20},
 		// \jot adds 3pt at 10pt BETWEEN rows: 12 + 2 x 15.
 		{"aligned", `\begin{aligned}x &= y\end{aligned}`,
 			`\begin{aligned}x &= y\\x &= y\\x &= y\end{aligned}`, 12, 42},
@@ -143,9 +147,9 @@ func TestTheStretchedEnvironmentTracksItsStrutLinearly(t *testing.T) {
 	// And end to end, with the brace's contribution stated rather than mixed in: the
 	// rows are 43.20 and the assembled brace is 45.00, so the total is the brace's.
 	three := envTotal(t, r, `\begin{cases}x & y\\x & y\\x & y\end{cases}`)
-	if math.Abs(three-45.00) > 0.05 {
-		t.Errorf("cases three rows = %.3f, this state is 45.00 — the ROWS are 43.20 "+
-			"(= 3 x 14.40, the reference) and the brace exceeds them", three)
+	if math.Abs(three-43.20) > 0.05 {
+		t.Errorf("cases three rows = %.3f, this state is 43.20 — the ROWS (= 3 x 14.40, "+
+			"the reference) and the brace, with \\delimitershortfall, no longer exceeds them", three)
 	}
 	// And the unstretched control, so this is a statement about the stretch and not
 	// about matrices in general.
@@ -204,13 +208,13 @@ func TestCasesOneRowIsFlooredByItsBrace(t *testing.T) {
 	// does floor it in both — ours just picks a smaller step from the ladder.
 	const rows = 14.40
 	full := envTotal(t, r, `\begin{cases}x & y\end{cases}`)
-	if full <= rows {
-		t.Errorf("the brace does not raise the total: %.3f against %.2f for the rows alone",
-			full, rows)
-	}
-	if math.Abs(full-16.67) > 0.05 {
-		t.Errorf("cases one row = %.3f, this state is 16.67 (tectonic 18.00) - "+
-			"if that is intended, update here AND the table above", full)
+	// UPDATED with the unrounded MATH values: the brace's rounded advances used to
+	// raise this to 16.67; now it is within \delimitershortfall of the rows and the
+	// rows decide, 14.40 (tectonic still gives 18.00, the face's ladder being
+	// different). Pinned to what this engine produces, to notice a change.
+	if math.Abs(full-rows) > 0.05 {
+		t.Errorf("cases one row = %.3f, this state is %.2f (tectonic 18.00) - "+
+			"if that is intended, update here AND the table above", full, rows)
 	}
 }
 
@@ -410,10 +414,11 @@ func TestTheExtensibleDelimiterDoesNotStopGrowing(t *testing.T) {
 	for _, c := range []struct {
 		content, want float64
 	}{
-		// Re-pinned: the unrounded part advances add 0.84 to each of the old
-		// whole-point values (42, 50, 62, 74, 114, 194, 394).
-		{24, 42.84}, {28, 50.84}, {34, 62.84}, {40, 74.84},
-		{60, 114.84}, {100, 194.84}, {200, 394.84},
+		// Re-pinned: unrounded part advances and \delimitershortfall (tex.web §762) put
+		// these 1.2 to 1.7 under the old whole-point values (42, 50, 62, 74, 114, 194,
+		// 394) — the brace may now fall up to 5pt short of the content, as TeX allows.
+		{24, 40.719}, {28, 48.34}, {34, 60.34}, {40, 72.34},
+		{60, 112.34}, {100, 192.34}, {200, 392.34},
 	} {
 		tex := fmt.Sprintf(`\left\lbrace\rule{1pt}{%gpt}\right.`, c.content)
 		_, m, err := r.RenderSVGMetrics(tex, 10)
