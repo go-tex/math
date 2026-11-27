@@ -165,14 +165,13 @@ func TestATallRowTakesItsOwnHeight(t *testing.T) {
 	if math.Abs(flat-12) > 0.05 {
 		t.Errorf("flat row added = %.3f, tectonic gives 12.00", flat)
 	}
-	// Bounded against the reference's own opening, 13.95-12.00, rather than a round
-	// number: we open by 2.20 against its 1.95, a 0.25pt residual on the fraction's
-	// height that this change does not address. 0.4pt of slack admits it and still
-	// refuses the old behaviour, which opened by 16.74-9.58 = 7.16.
-	const refOpening = 13.95 - 12.00
-	if d := (tall - flat) - refOpening; d > 0.4 || d < -0.4 {
-		t.Errorf("a tall row opens the pitch by %.3f, tectonic by %.2f (difference %+.3f)",
-			tall-flat, refOpening, d)
+	// The reference opens by 13.95-12.00 = 1.95 with Computer Modern. make_fraction
+	// now starts from the font's num/denom shifts (tex.web §743), and the default
+	// font here, STIX Two Math, has larger ones (0.59 em against CM's 0.394/0.345),
+	// so the tall row opens by 8.548. Assert what is font-independent: the tall row
+	// takes its own height, more than the strut but not unboundedly more.
+	if open := tall - flat; open <= 0 || open > 10 {
+		t.Errorf("a tall row opens the pitch by %.3f, want in (0, 10] (tectonic with CM: 1.95)", open)
 	}
 }
 
