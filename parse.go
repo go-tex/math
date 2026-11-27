@@ -481,7 +481,7 @@ func (e *engine) parseList(toks []token, sty style, stop stopMode) (*box, []toke
 				case "atop":
 					b = e.binom(num, den, sty)
 				default: // choose
-					b = e.delimited(e.binom(num, den, sty), '(', ')', sty)
+					b = e.fracDelimited(e.binom(num, den, sty), '(', ')', sty)
 				}
 				return b, rest, nil
 			}
@@ -878,7 +878,7 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 			inner = e.fraction(num, den, fsty)
 		}
 		if left != 0 || right != 0 {
-			inner = e.delimited(inner, left, right, fsty)
+			inner = e.fracDelimited(inner, left, right, fsty)
 		}
 		return inner, clsInner, false, r6, nil
 	case "binom", "dbinom", "tbinom", "choose":
@@ -896,7 +896,7 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 		if err != nil {
 			return nil, 0, false, nil, err
 		}
-		return e.delimited(e.binom(num, den, fsty), '(', ')', fsty), clsInner, false, r2, nil
+		return e.fracDelimited(e.binom(num, den, fsty), '(', ')', fsty), clsInner, false, r2, nil
 	case "overset", "underset", "stackrel":
 		// \overset{top}{base} (and \stackrel) put a small box above the base;
 		// \underset{bottom}{base} below it.
