@@ -1105,7 +1105,50 @@ func (e *engine) axisCentre(b *box, px int) *box {
 
 // delimited wraps content in stretchy left/right delimiters (0 rune = none).
 func (e *engine) delimited(inner *box, open, close rune, sty style) *box {
-	target := 2 * gomath.Max(inner.h-e.axis(sty.px), inner.d+e.axis(sty.px))
+	return e.delimitedTo(inner, open, close, 2*gomath.Max(inner.h-e.axis(sty.px), inner.d+e.axis(sty.px)), sty)
+}
+
+// Fraction delimiter sizes, in em. TeX does not size the delimiters of
+// \atopwithdelims / \overwithdelims / \abovewithdelims (hence \binom, \choose and
+// \genfrac with delimiters) from the fraction: make_fraction, "Put the fraction
+// into a box with its delimiters" (tex.web:14656-14661, §748), takes
+//
+//	if cur_style<text_style then delta:=delim1(cur_size) else delta:=delim2(cur_size);
+//	x:=var_delimiter(left_delimiter(q), cur_size, delta)
+//
+// delim1/delim2 being fontdimens 20/21 of the math-symbols font (tex.web:13829-
+// 13831; TeXbook appendix G, rule 15e). var_delimiter takes the first variant
+// whose height+depth reaches delta, else the largest (tex.web:13952-13969) — that
+// is stretchVertical's rule with target = delta, and the content plays no part.
+//
+// The values are cmsy10's, the fixed constants of the TeX math font the reference
+// sets maths in: 23.9pt and 10.1pt at 10pt. They are NOT derived from the face. For
+// an OpenType MATH font XeTeX maps delim1 to DelimitedSubFormulaMinHeight and
+// delim2 to min(1.5em, delim1) (tectonic crates/engine_xetex/xetex/
+// xetex-XeTeXOTMath.cpp:110 and :123-125, "XXX not sure what OT parameter we
+// should use here"); Latin Modern Math gives 1.3em for both, so \binom{n}{k} in
+// text would take the 1.8em paren where tectonic, setting CM, takes 1.2em — the
+// OT mapping measures further from the reference than the content-sized rule it
+// would replace, which is why the CM constants are used. They are what the
+// reference's cmsy10 carries, and Latin Modern Math is standing in for CM.
+const (
+	fracDelim1 = 2.39 // em, display style
+	fracDelim2 = 1.01 // em, text and script styles
+)
+
+// fracDelimited is the box of §748: a fraction between delimiters sized by delim1
+// (display) or delim2 (otherwise), whatever the fraction holds.
+func (e *engine) fracDelimited(inner *box, open, close rune, sty style) *box {
+	d := fracDelim2
+	if sty.display {
+		d = fracDelim1
+	}
+	return e.delimitedTo(inner, open, close, d*float64(sty.px), sty)
+}
+
+// delimitedTo is delimited with the stretch target given: the total
+// height+depth each delimiter must reach.
+func (e *engine) delimitedTo(inner *box, open, close rune, target float64, sty style) *box {
 	out := newBox(clsInner)
 	x := 0.0
 	grow := func(b *box) {
