@@ -550,9 +550,26 @@ func (e *engine) fraction(num, den *box, sty style) *box {
 	w := inner + 2*pad
 	out := newBox(clsInner)
 	out.w = w
-	numBase := -(axis + rt/2 + gapN + num.d)
+	// make_fraction (tex.web §743-§744, §746): the numerator and denominator
+	// START at shift_up / shift_down (OpenType FractionNumerator[DisplayStyle]ShiftUp
+	// and FractionDenominator[DisplayStyle]ShiftDown, the MATH table's num2/num1 and
+	// denom2/denom1) and are pushed further apart only when the clearance to the
+	// rule falls short of the minimum gap (delta1, delta2 of §746).
+	shiftUp := e.mc(opentype.FractionNumeratorShiftUp, px)
+	shiftDown := e.mc(opentype.FractionDenominatorShiftDown, px)
+	if sty.display {
+		shiftUp = e.mc(opentype.FractionNumeratorDisplayStyleShiftUp, px)
+		shiftDown = e.mc(opentype.FractionDenominatorDisplayStyleShiftDown, px)
+	}
+	if d1 := gapN - ((shiftUp - num.d) - (axis + rt/2)); d1 > 0 {
+		shiftUp += d1
+	}
+	if d2 := gapD - ((axis - rt/2) - (den.h - shiftDown)); d2 > 0 {
+		shiftDown += d2
+	}
+	numBase := -shiftUp
 	place(out, num, (w-num.w)/2, numBase)
-	denBase := -axis + rt/2 + gapD + den.h
+	denBase := shiftDown
 	place(out, den, (w-den.w)/2, denBase)
 	rule(out, pad, -axis-rt/2, inner, rt)
 	out.h = -numBase + num.h
@@ -561,25 +578,33 @@ func (e *engine) fraction(num, den *box, sty style) *box {
 }
 
 // binom stacks num over den with NO rule (the body of \binom, wrapped in
-// parentheses by the caller). It reuses the fraction gaps, widened by the rule
-// thickness that a fraction would occupy, so the two rows sit a little apart.
+// parentheses by the caller): make_fraction with thickness 0, tex.web §743
+// (shift_up = num3, shift_down = denom2, in display style denom1 unchanged) and
+// §745 (clearance 3*rule, 7*rule in display style, split evenly). The OpenType
+// MATH constants are StackTop[DisplayStyle]ShiftUp, StackBottom[DisplayStyle]
+// ShiftDown and Stack[DisplayStyle]GapMin (the table's own 3x / 7x rule values).
 func (e *engine) binom(num, den *box, sty style) *box {
 	px := sty.px
-	axis := e.axis(px)
-	rt := e.mc(opentype.FractionRuleThickness, px)
-	gapN := e.mc(opentype.FractionNumeratorGapMin, px) + rt
-	gapD := e.mc(opentype.FractionDenominatorGapMin, px) + rt
+	shiftUp := e.mc(opentype.StackTopShiftUp, px)
+	shiftDown := e.mc(opentype.StackBottomShiftDown, px)
+	gap := e.mc(opentype.StackGapMin, px)
 	if sty.display {
-		gapN = e.mc(opentype.FractionNumDisplayStyleGapMin, px) + rt
-		gapD = e.mc(opentype.FractionDenomDisplayStyleGapMin, px) + rt
+		shiftUp = e.mc(opentype.StackTopDisplayStyleShiftUp, px)
+		shiftDown = e.mc(opentype.StackBottomDisplayStyleShiftDown, px)
+		gap = e.mc(opentype.StackDisplayStyleGapMin, px)
+	}
+	// §745: delta = half(clr - ((shift_up - depth(x)) - (height(z) - shift_down))).
+	if delta := (gap - ((shiftUp - num.d) - (den.h - shiftDown))) / 2; delta > 0 {
+		shiftUp += delta
+		shiftDown += delta
 	}
 	pad := float64(px) * 0.12
 	w := gomath.Max(num.w, den.w) + 2*pad
 	out := newBox(clsInner)
 	out.w = w
-	numBase := -(axis + gapN + num.d)
+	numBase := -shiftUp
 	place(out, num, (w-num.w)/2, numBase)
-	denBase := -axis + gapD + den.h
+	denBase := shiftDown
 	place(out, den, (w-den.w)/2, denBase)
 	out.h = -numBase + num.h
 	out.d = denBase + den.d
