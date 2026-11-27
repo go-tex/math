@@ -687,7 +687,10 @@ func TestSuperscriptBaselineDrops(t *testing.T) {
 	}{
 		{`f'(x)`, 13},
 		{`x_i^2`, 11},
-		{`\sum_{i=1}^n a_i`, 12},
+		// 12.22 with unrounded MATH constants and advances (it was 12.00 only because
+		// each of them was rounded to a whole point first). The bound guards against
+		// the 15+ of the baseline-pinned-to-the-top defect, not against a quarter point.
+		{`\sum_{i=1}^n a_i`, 12.5},
 	} {
 		_, m, err := r.RenderSVGMetrics(c.tex, 11)
 		if err != nil {

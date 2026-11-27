@@ -265,9 +265,14 @@ func (e *engine) gidPath(gid opentype.GlyphIndex, px int) string {
 	return d
 }
 
-// mc reads a MATH constant scaled to px.
+// mc reads a MATH constant scaled to px, UNROUNDED. MathConstant rounds to a whole
+// pixel, and the formulas lay out at px = the point size, so every constant was
+// rounded to the nearest point: AxisHeight 250/1000 em at 10pt is 2.5, not 3, and
+// the reference (tectonic) centres fractions and relations on 2.5. The OpenType MATH
+// table stores MathConstants in design units (FWORD / MathValueRecord) and implies
+// no rounding. The percentage constants come back verbatim from either form.
 func (e *engine) mc(which opentype.MathConstant, px int) float64 {
-	return float64(e.face(px).MathConstant(which))
+	return e.face(px).MathConstantUnits(which)
 }
 
 func (e *engine) axis(px int) float64 { return e.mc(opentype.AxisHeight, px) }
@@ -311,7 +316,8 @@ func (e *engine) gidBox(gid opentype.GlyphIndex, px int, cls atomClass) *box {
 	fc := e.face(px)
 	d := e.gidPath(gid, px)
 	h, dp := e.gidVExtent(gid, px)
-	b := &box{w: float64(fc.AdvanceIndex(gid)), h: h, d: dp, cls: cls}
+	// AdvanceIndexUnits is in DESIGN units, not pixels: scale it.
+	b := &box{w: fc.AdvanceIndexUnits(gid) * e.scale(px), h: h, d: dp, cls: cls}
 	if d != "" {
 		fmt.Fprintf(&b.svg, `<path d="%s"/>`, d)
 	}
@@ -957,10 +963,10 @@ func (e *engine) radical(body, index *box, sty style) *box {
 func (e *engine) stretchVertical(r rune, target float64, px int, cls atomClass) *box {
 	gid, _ := e.font.GlyphIndex(r) // 0 (notdef) if absent
 	best := gid
-	variants, asm := e.face(px).MathVariants(gid, true)
+	variants, asm := e.face(px).MathVariantsUnits(gid, true)
 	for _, v := range variants {
 		best = v.Glyph
-		if float64(v.Advance) >= target {
+		if v.Advance >= target {
 			return e.gidBox(best, px, cls)
 		}
 	}
@@ -996,19 +1002,19 @@ func (e *engine) stretchVertical(r rune, target float64, px int, cls atomClass) 
 // environments regressed. So: the smallest part count that can REACH the target at
 // minimum overlap, then overlap spread uniformly to land as close to it as the
 // joints allow.
-func (e *engine) assembleVertical(asm *opentype.MathAssembly, target float64, px int, cls atomClass) *box {
+func (e *engine) assembleVertical(asm *opentype.MathAssemblyUnits, target float64, px int, cls atomClass) *box {
 	if asm == nil || len(asm.Parts) == 0 {
 		return nil
 	}
-	minOv := float64(asm.MinConnectorOverlap)
+	minOv := asm.MinConnectorOverlap
 	// The tightest joint decides how far the stack can be compressed, the overlap here
 	// being uniform. Joints are between consecutive parts in the recipe's own order,
 	// and an extender repeated n times also joins ITSELF — which the pairwise loop
 	// never sees.
 	maxOv := gomath.Inf(1)
 	for i := 0; i+1 < len(asm.Parts); i++ {
-		if o := gomath.Min(float64(asm.Parts[i].EndConnector),
-			float64(asm.Parts[i+1].StartConnector)); o < maxOv {
+		if o := gomath.Min(asm.Parts[i].EndConnector,
+			asm.Parts[i+1].StartConnector); o < maxOv {
 			maxOv = o
 		}
 	}
@@ -1016,7 +1022,7 @@ func (e *engine) assembleVertical(asm *opentype.MathAssembly, target float64, px
 		if !p.Extender {
 			continue
 		}
-		if o := gomath.Min(float64(p.EndConnector), float64(p.StartConnector)); o < maxOv {
+		if o := gomath.Min(p.EndConnector, p.StartConnector); o < maxOv {
 			maxOv = o
 		}
 	}
@@ -1027,11 +1033,11 @@ func (e *engine) assembleVertical(asm *opentype.MathAssembly, target float64, px
 	nFixed, nExt := 0, 0
 	for _, p := range asm.Parts {
 		if p.Extender {
-			ext += float64(p.FullAdvance)
+			ext += p.FullAdvance
 			nExt++
 			continue
 		}
-		fixed += float64(p.FullAdvance)
+		fixed += p.FullAdvance
 		nFixed++
 	}
 	if nExt == 0 || ext <= minOv*float64(nExt) {
@@ -1072,7 +1078,7 @@ func (e *engine) assembleVertical(asm *opentype.MathAssembly, target float64, px
 				y += ov
 			}
 			first = false
-			y -= float64(p.FullAdvance)
+			y -= p.FullAdvance
 			place(out, g, 0, y)
 			if g.w > w {
 				w = g.w
@@ -1103,9 +1109,30 @@ func (e *engine) axisCentre(b *box, px int) *box {
 	return out
 }
 
+// delimiterFactor and delimiterShortfall are plain.tex's \delimiterfactor=901 and
+// \delimitershortfall=5pt (ltplain.dtx:847, :881), both inherited by LaTeX.
+const (
+	delimiterFactor    = 901
+	delimiterShortfall = 5.0 // pt; the engine's px is the point size
+)
+
+// delimiterTarget is the size \left...\right asks of its delimiters, tex.web §762
+// (make_left_right): delta1 is the distance of the content's farthest edge from the
+// axis, and the target is the larger of delta1/500*\delimiterfactor and
+// 2*delta1 - \delimitershortfall. So a delimiter may fall up to 5pt (or 9.9%) SHORT
+// of the content, and the first variant of height+depth >= that is taken.
+//
+// This was not needed while every variant's advance was rounded to a whole point:
+// a 11.87 variant read 12 and reached a 12.36 target by luck. With the unrounded
+// advances it does not, and without the shortfall a one-row pmatrix took the next
+// variant (14.27) where tectonic keeps 11.87 (total 12.00).
+func delimiterTarget(delta1 float64) float64 {
+	return gomath.Max(delta1/500*delimiterFactor, 2*delta1-delimiterShortfall)
+}
+
 // delimited wraps content in stretchy left/right delimiters (0 rune = none).
 func (e *engine) delimited(inner *box, open, close rune, sty style) *box {
-	return e.delimitedTo(inner, open, close, 2*gomath.Max(inner.h-e.axis(sty.px), inner.d+e.axis(sty.px)), sty)
+	return e.delimitedTo(inner, open, close, delimiterTarget(gomath.Max(inner.h-e.axis(sty.px), inner.d+e.axis(sty.px))), sty)
 }
 
 // Fraction delimiter sizes, in em. TeX does not size the delimiters of
