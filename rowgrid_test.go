@@ -297,8 +297,11 @@ func TestSmallmatrixPitchIsSixExAt(t *testing.T) {
 func TestSmallmatrixResidualIsTheFaceNotTheGrid(t *testing.T) {
 	r := newRenderer(t)
 	e := &engine{font: r.font, upem: float64(r.font.UnitsPerEm()), gc: r.gc}
-	if got := e.axis(10); math.Abs(got-3.0) > 0.001 {
-		t.Errorf("axis = %.4f, this state is 3.0000 (tectonic 2.5000)", got)
+	// STIX Two Math's AxisHeight is 258/1000 em: 2.58 unrounded. It read 3.0000 while
+	// the constant was rounded to a whole point (2.58 -> 3), and 0.42 of that was
+	// pure rounding. The reference (Latin Modern Math, 250/1000) is 2.5.
+	if got := e.axis(10); math.Abs(got-2.58) > 0.001 {
+		t.Errorf("axis = %.4f, this state is 2.5800 (tectonic 2.5000)", got)
 	}
 	// The script size is the half of this that does NOT differ. Asserting it keeps
 	// the attribution honest: if it ever drifts, the glyph residual below stops
@@ -407,8 +410,10 @@ func TestTheExtensibleDelimiterDoesNotStopGrowing(t *testing.T) {
 	for _, c := range []struct {
 		content, want float64
 	}{
-		{24, 42.0}, {28, 50.0}, {34, 62.0}, {40, 74.0},
-		{60, 114.0}, {100, 194.0}, {200, 394.0},
+		// Re-pinned: the unrounded part advances add 0.84 to each of the old
+		// whole-point values (42, 50, 62, 74, 114, 194, 394).
+		{24, 42.84}, {28, 50.84}, {34, 62.84}, {40, 74.84},
+		{60, 114.84}, {100, 194.84}, {200, 394.84},
 	} {
 		tex := fmt.Sprintf(`\left\lbrace\rule{1pt}{%gpt}\right.`, c.content)
 		_, m, err := r.RenderSVGMetrics(tex, 10)
@@ -458,21 +463,22 @@ func TestTheAssemblyIsStackedByItsOwnArithmetic(t *testing.T) {
 	if !ok {
 		t.Skip("the face has no brace")
 	}
-	_, asm := e.face(10).MathVariants(gid, true)
+	_, asm := e.face(10).MathVariantsUnits(gid, true)
 	if asm == nil {
 		t.Skip("the face has no assembly for the brace")
 	}
 	// The recipe this test's numbers come from, asserted so a face change is noticed
 	// rather than silently changing what the bounds below mean.
 	if len(asm.Parts) != 5 || asm.MinConnectorOverlap != 1 {
-		t.Fatalf("recipe changed: %d parts, min overlap %d — re-derive the bounds",
+		t.Fatalf("recipe changed: %d parts, min overlap %.3f — re-derive the bounds",
 			len(asm.Parts), asm.MinConnectorOverlap)
 	}
 	adv := 0.0
 	for _, p := range asm.Parts {
-		adv += float64(p.FullAdvance)
+		adv += p.FullAdvance
 	}
-	if math.Abs(adv-65) > 0.01 {
+	// 64.99, not 65: five parts of STIX's brace, each unrounded (they rounded to 65).
+	if math.Abs(adv-65) > 0.02 {
 		t.Fatalf("parts advance %.2f in total, the bounds below assume 65.00", adv)
 	}
 	// A target inside [45.00, 61.00] must be met by compressing, not by adding parts.
@@ -502,34 +508,34 @@ func TestTheAssemblyIsStackedByItsOwnArithmetic(t *testing.T) {
 func TestTheAssemblyRefusesRecipesItCannotUse(t *testing.T) {
 	r := newRenderer(t)
 	e := &engine{font: r.font, upem: float64(r.font.UnitsPerEm()), gc: r.gc}
-	part := func(adv, start, end int, ext bool) opentype.MathAssemblyPart {
-		return opentype.MathAssemblyPart{
-			FullAdvance: adv, StartConnector: start, EndConnector: end, Extender: ext,
+	part := func(adv, start, end int, ext bool) opentype.MathAssemblyPartUnits {
+		return opentype.MathAssemblyPartUnits{
+			FullAdvance: float64(adv), StartConnector: float64(start), EndConnector: float64(end), Extender: ext,
 		}
 	}
 	for _, c := range []struct {
 		name string
-		asm  *opentype.MathAssembly
+		asm  *opentype.MathAssemblyUnits
 		want bool // an assembly is expected
 	}{
 		{"nil recipe", nil, false},
-		{"no parts", &opentype.MathAssembly{MinConnectorOverlap: 1}, false},
-		{"no extender", &opentype.MathAssembly{MinConnectorOverlap: 1,
-			Parts: []opentype.MathAssemblyPart{part(10, 0, 5, false), part(10, 5, 0, false)}}, false},
+		{"no parts", &opentype.MathAssemblyUnits{MinConnectorOverlap: 1}, false},
+		{"no extender", &opentype.MathAssemblyUnits{MinConnectorOverlap: 1,
+			Parts: []opentype.MathAssemblyPartUnits{part(10, 0, 5, false), part(10, 5, 0, false)}}, false},
 		// The extender advances exactly what its two overlaps cost, so each repetition
 		// adds nothing and no count can ever reach a larger target.
-		{"extender that pays for itself", &opentype.MathAssembly{MinConnectorOverlap: 10,
-			Parts: []opentype.MathAssemblyPart{part(10, 0, 10, false), part(10, 10, 10, true),
+		{"extender that pays for itself", &opentype.MathAssemblyUnits{MinConnectorOverlap: 10,
+			Parts: []opentype.MathAssemblyPartUnits{part(10, 0, 10, false), part(10, 10, 10, true),
 				part(10, 10, 0, false)}}, false},
 		// The extender FIRST, which is the bar's own recipe shape in this face. That is
 		// the only arrangement where its self-join can be strictly the tightest: with
 		// an extender between two fixed parts, the joint before it is already
 		// min(prev.End, ext.Start) and so never looser than min(ext.Start, ext.End).
-		{"extender at the end of the chain", &opentype.MathAssembly{MinConnectorOverlap: 1,
-			Parts: []opentype.MathAssemblyPart{part(20, 1, 8, true), part(20, 8, 0, false)}}, true},
+		{"extender at the end of the chain", &opentype.MathAssemblyUnits{MinConnectorOverlap: 1,
+			Parts: []opentype.MathAssemblyPartUnits{part(20, 1, 8, true), part(20, 8, 0, false)}}, true},
 		// Connectors below MinConnectorOverlap, so the maxOv floor applies.
-		{"tight extender", &opentype.MathAssembly{MinConnectorOverlap: 4,
-			Parts: []opentype.MathAssemblyPart{part(20, 0, 9, false), part(20, 2, 2, true),
+		{"tight extender", &opentype.MathAssemblyUnits{MinConnectorOverlap: 4,
+			Parts: []opentype.MathAssemblyPartUnits{part(20, 0, 9, false), part(20, 2, 2, true),
 				part(20, 9, 0, false)}}, true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
