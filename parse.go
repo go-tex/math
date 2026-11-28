@@ -382,6 +382,10 @@ func (e *engine) parseList(toks []token, sty style, stop stopMode) (*box, []toke
 				continue
 			case "scriptstyle":
 				sty.px, sty.display, sty.spacious, toks = e.scriptSize(sty.px), false, false, toks[1:]
+				// \scriptstyle IS script style: its glyphs are the ssty alternates.
+				if sty.level < 1 {
+					sty.level = 1
+				}
 				continue
 			case "limits", "nolimits", "displaylimits",
 				"normalfont", "rmfamily", "sffamily", "ttfamily", "bfseries", "mdseries",
