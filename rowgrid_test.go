@@ -554,3 +554,28 @@ func TestTheAssemblyRefusesRecipesItCannotUse(t *testing.T) {
 		})
 	}
 }
+
+// A trailing \\ before \end{...} makes no row: \end supplies a \crcr, and a \crcr
+// that follows a \cr is ignored (tex.web §785, align_peek). Tectonic measures
+// array{l}u\\ \end{array} at 8.5pt + 3.5pt, the same as without the \; we used to
+// typeset a second, empty, 12pt row (24pt against 12pt).
+func TestTrailingRowBreakMakesNoRow(t *testing.T) {
+	r := newRenderer(t)
+	for _, env := range []string{"array}{l", "cases", "matrix", "pmatrix", "aligned", "gathered", "smallmatrix"} {
+		name := env
+		if i := len(env); i > 0 {
+			for j := 0; j < len(env); j++ {
+				if env[j] == '}' {
+					name = env[:j]
+				}
+			}
+		}
+		without := envTotal(t, r, `\begin{`+env+`}x & y\end{`+name+`}`)
+		for _, tail := range []string{`\\`, `\\ `, "\\\\\n"} {
+			got := envTotal(t, r, `\begin{`+env+`}x & y`+tail+`\end{`+name+`}`)
+			if math.Abs(got-without) > 1e-9 {
+				t.Errorf("%s with trailing %q = %.3f, without = %.3f: the \\\\ made an empty row", name, tail, got, without)
+			}
+		}
+	}
+}
