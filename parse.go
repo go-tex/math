@@ -578,7 +578,7 @@ func (e *engine) parseAtom(toks []token, sty style) (*box, atomClass, bool, []to
 		return e.parseControl(t.text, toks[1:], sty)
 	default: // tChar
 		r := mapAlpha(mathChar(t.r), sty)
-		b := e.mustGlyph(r, sty.px, clsOrd)
+		b := e.mustGlyphIn(r, sty, clsOrd)
 		return b, charClass(t.r), false, toks[1:], nil
 	}
 }
@@ -1031,7 +1031,7 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 		if !ok {
 			return nil, 0, false, nil, fmt.Errorf(`texmath: \char needs a character code`)
 		}
-		return e.mustGlyph(rune(code), sty.px, clsOrd), clsOrd, false, rest, nil
+		return e.mustGlyphIn(rune(code), sty, clsOrd), clsOrd, false, rest, nil
 	}
 	// \big \Big \bigg \Bigg (and the l/r/m variants) size the FOLLOWING delimiter to
 	// a fixed height instead of stretching it to surrounding content.
@@ -1063,7 +1063,7 @@ func (e *engine) parseControl(name string, toks []token, sty style) (*box, atomC
 	}
 	// symbols
 	if s, ok := symbols[name]; ok {
-		b := e.mustGlyph(s.r, sty.px, s.cls)
+		b := e.mustGlyphIn(s.r, sty, s.cls)
 		if s.cls == clsOp && sty.display {
 			b = e.displayOperator(s.r, sty.px, s.cls, b)
 		}
@@ -1499,7 +1499,17 @@ func isBaseDigit(r rune, base int) bool {
 // mustGlyph returns a glyph box, or a zero-width empty box if the font lacks the
 // rune.
 func (e *engine) mustGlyph(r rune, px int, cls atomClass) *box {
-	if b, ok := e.glyphBox(r, px, cls); ok {
+	return e.mustGlyphLevel(r, px, 0, cls)
+}
+
+// mustGlyphIn is mustGlyph for the style sty: its script level selects the
+// font's script-style alternate (glyphBoxLevel).
+func (e *engine) mustGlyphIn(r rune, sty style, cls atomClass) *box {
+	return e.mustGlyphLevel(r, sty.px, sty.level, cls)
+}
+
+func (e *engine) mustGlyphLevel(r rune, px, level int, cls atomClass) *box {
+	if b, ok := e.glyphBoxLevel(r, px, level, cls); ok {
 		return b
 	}
 	return newBox(cls)
@@ -1516,7 +1526,7 @@ func (e *engine) opName(s string, cls atomClass, sty style) *box {
 			items = append(items, e.kern(float64(sty.px)*3/18))
 			continue
 		}
-		items = append(items, e.mustGlyph(r, sty.px, clsOrd))
+		items = append(items, e.mustGlyphIn(r, sty, clsOrd))
 	}
 	b := e.hlist(items, style{px: sty.px})
 	b.cls = cls
