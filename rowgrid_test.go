@@ -579,3 +579,12 @@ func TestTrailingRowBreakMakesNoRow(t *testing.T) {
 		}
 	}
 }
+
+// The shortcut for a trailing \\ must still check that \end names the environment
+// that was opened, as the ordinary path does.
+func TestTrailingRowBreakStillChecksTheEnd(t *testing.T) {
+	r := newRenderer(t)
+	if _, _, err := r.RenderSVGMetrics(`\begin{array}{l}x\\ \end{cases}`, 10); err == nil {
+		t.Error(`\begin{array} x \\ \end{cases} rendered without error`)
+	}
+}
