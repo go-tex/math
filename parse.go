@@ -1111,6 +1111,18 @@ func (e *engine) parseEnv(toks []token, sty style) (*box, atomClass, bool, []tok
 		if err != nil {
 			return nil, 0, false, nil, err
 		}
+		// A row that has just begun (right after a \\) and reaches \end with no cell
+		// content is the \crcr that \end{array} supplies: tex.web §785 (align_peek)
+		// ignores a \crcr that follows a \cr, so no empty row is typeset.
+		if len(row) == 0 && len(rows) > 0 && len(rest) > 0 &&
+			rest[0].kind == tCtrl && rest[0].text == "end" && len(toks) == len(rest) {
+			r, err := e.consumeEnd(rest[1:], env)
+			if err != nil {
+				return nil, 0, false, nil, err
+			}
+			b := e.finishEnv(info, rows, aligns, vrules, csty.px, sty)
+			return b, b.cls, false, r, nil
+		}
 		row = append(row, cell)
 		toks = rest
 		if len(toks) == 0 {
