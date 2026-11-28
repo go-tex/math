@@ -304,9 +304,26 @@ func (e *engine) scale(px int) float64 { return float64(px) / e.upem }
 
 // glyphBox lays out a single rune as a box of the given class.
 func (e *engine) glyphBox(r rune, px int, cls atomClass) (*box, bool) {
+	return e.glyphBoxLevel(r, px, 0, cls)
+}
+
+// glyphBoxLevel is glyphBox for a glyph set at script nesting level (style.level):
+// from level 1 up it sets the font's 'ssty' alternate, as the OpenType registered
+// features chapter (features_pt, 'ssty') asks of a math layout engine: the first
+// alternate for scripts, the second for scripts of scripts, and the plain glyph for
+// a rune the feature does not cover. The font drew those forms for scriptPercent
+// ScaleDown, so they are wider per em than the text glyph: Latin Modern Math's k is
+// 528 units at text size and 600 at script size, where Computer Modern's cmmi7 is
+// 631. Scaling the text glyph to 70% sets every script letter too narrow.
+func (e *engine) glyphBoxLevel(r rune, px, level int, cls atomClass) (*box, bool) {
 	gid, ok := e.font.GlyphIndex(r)
 	if !ok {
 		return nil, false
+	}
+	if level > 0 {
+		if s := e.face(px).ShapeAlternate(string(r), level-1, "ssty"); len(s) == 1 && s[0] != 0 {
+			gid = s[0]
+		}
 	}
 	return e.gidBox(gid, px, cls), true
 }
